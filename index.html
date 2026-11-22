@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow,noarchive">
+  <meta name="referrer" content="no-referrer">
+  <title>Coordinator timeline</title>
+  <style>
+    html,body{height:100%;margin:0;background:#f4f7fa;color:#17324a;font:16px/1.5 system-ui,sans-serif}
+    #status{max-width:36rem;margin:12vh auto;padding:1.5rem 2rem;border:1px solid #d7e1e9;border-radius:12px;background:#fff}
+    #status h1{font-size:1.4rem;line-height:1.25;margin:0 0 .5rem}
+    #status p{margin:.5rem 0 0}
+    #chart{display:block;width:100%;height:100%;border:0}
+    #chart[hidden]{display:none}
+    @media(max-width:40rem){#status{margin:2rem 1rem}}
+  </style>
+  <script type="module" src="./view.mjs"></script>
+</head>
+<body>
+  <main id="status" role="status" aria-live="polite">
+    <h1>Opening coordinator timeline</h1>
+    <p>This link needs its complete private address.</p>
+  </main>
+  <iframe id="chart" title="Coordinator timeline" hidden
+    sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox allow-downloads allow-modals"
+    referrerpolicy="no-referrer"></iframe>
+  <noscript>This page needs JavaScript to open the private timeline.</noscript>
+</body>
+</html>
