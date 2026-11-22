@@ -3,17 +3,27 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'sha256-RWHiDSdg+FkDsV4JflcMJ23lSH2VuwgyN+eN120e1nk=' 'sha256-oAkeyXTAi0IkjQbHZbwU0wm+CFy+Lsh4bn5QJMY+G/4=' 'sha256-2/N7PIvLLZSp67qtSmbd9eI1kCEo+QX1rdbSnTVENJw='; style-src 'unsafe-inline'; connect-src 'self'; frame-src 'self' about:; img-src 'none'; font-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; worker-src 'none'">
   <meta name="robots" content="noindex,nofollow,noarchive">
   <meta name="referrer" content="no-referrer">
-  <title>Coordinator timeline</title>
+  <title>Arby’s coordinator timeline</title>
   <style>
     html,body{height:100%;margin:0;background:#f4f7fa;color:#17324a;font:16px/1.5 system-ui,sans-serif}
     #status{max-width:36rem;margin:12vh auto;padding:1.5rem 2rem;border:1px solid #d7e1e9;border-radius:12px;background:#fff}
     #status h1{font-size:1.4rem;line-height:1.25;margin:0 0 .5rem}
     #status p{margin:.5rem 0 0}
-    #chart{display:block;width:100%;height:100%;border:0}
-    #chart[hidden]{display:none}
-    @media(max-width:40rem){#status{margin:2rem 1rem}}
+    #workspace{height:100%;display:flex;flex-direction:column}
+    #workspace[hidden],#chart[hidden]{display:none}
+    #actionBar{display:flex;align-items:center;gap:.9rem;flex-wrap:wrap;padding:.55rem 1rem;border-bottom:1px solid #cddbe4;background:#fff}
+    #actionBar strong{font-size:1rem}
+    #selection{margin:0;flex:1;min-width:14rem}
+    #selectionContext{display:flex;gap:.4rem 1rem;flex-wrap:wrap;width:100%;font-size:.88rem;color:#405c6b}
+    #selectionContext span{display:inline-block}
+    #draftAction{padding:.45rem .8rem;border:1px solid #b5c5cb;border-radius:.4rem;background:#edf2f3;color:#5f7580;font:inherit;cursor:not-allowed}
+    #heldReason{width:100%;margin:0;color:#536a78;font-size:.85rem}
+    #openExternal{color:#18536a;font-weight:650;white-space:nowrap}
+    #chart{display:block;flex:1;min-height:0;width:100%;border:0}
+    @media(max-width:40rem){#status{margin:2rem 1rem}#actionBar{gap:.35rem}#selection{min-width:100%}}
   </style>
   <script type="module" src="./view.mjs"></script>
 </head>
@@ -22,9 +32,23 @@
     <h1>Opening coordinator timeline</h1>
     <p>This link needs its complete private address.</p>
   </main>
-  <iframe id="chart" title="Coordinator timeline" hidden
-    sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox allow-downloads allow-modals"
-    referrerpolicy="no-referrer"></iframe>
+  <div id="workspace" hidden>
+    <header id="actionBar">
+      <strong>Coordinator actions</strong>
+      <a id="openExternal" href="#" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">Open in browser ↗</a>
+      <p id="selection" aria-live="polite">Select a project or work order draft button in the chart.</p>
+      <button id="draftAction" type="button" disabled>Create or open Outlook draft</button>
+      <div id="selectionContext" aria-live="polite">
+        <span id="selectedIdentity">Exact source ID: none selected</span>
+        <span id="selectedStore">Store: unverified</span>
+        <span id="selectedRecipients">Intended recipients: unverified</span>
+      </div>
+      <p id="heldReason">Draft actions are held until company sign-in, shared claims and receipts, coordinator access, and fresh source checks are ready.</p>
+    </header>
+    <iframe id="chart" title="Coordinator timeline" hidden
+      sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox allow-downloads allow-modals"
+      referrerpolicy="no-referrer"></iframe>
+  </div>
   <noscript>This page needs JavaScript to open the private timeline.</noscript>
 </body>
 </html>
