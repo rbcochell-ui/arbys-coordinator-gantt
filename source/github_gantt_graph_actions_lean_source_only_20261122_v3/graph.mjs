@@ -15,7 +15,7 @@ const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SENT_SCAN_PAGE_SIZE = 25;
 const SENT_SCAN_MAX_PAGES = 20;
 const SENT_SCAN_LOOKBACK_MS = 5 * 60 * 1000;
-const SENT_SCAN_SELECT = 'id,internetMessageHeaders,sentDateTime';
+const SENT_SCAN_SELECT = 'id,sentDateTime';
 const SENT_SCAN_ORDER = 'sentDateTime desc';
 const SENT_SCAN_PATH = '/v1.0/me/mailFolders/sentitems/messages';
 
@@ -137,9 +137,27 @@ export class GraphClient {
     return r.data;
   }
 
+  async getMessageHeaders(id) {
+    if (typeof id !== 'string' || id.length < 8 || id.length > 2048) {
+      throw new HeldActionError('MESSAGE_ID_INVALID');
+    }
+    // Graph explicitly documents internetMessageHeaders on Get message. A
+    // collection response is only an ID/time inventory, never header proof.
+    const path = `/v1.0/me/messages/${encodeURIComponent(id)}?$select=id,internetMessageHeaders`;
+    const r = await this.request(path, {
+      scopes: GRAPH_SCOPES.mail, headers: {Prefer: 'IdType="ImmutableId"'},
+    });
+    if (r.status !== 200 || r.data?.id !== id ||
+        !Array.isArray(r.data.internetMessageHeaders)) {
+      throw new HeldActionError('SENT_SCAN_INCOMPLETE');
+    }
+    return r.data.internetMessageHeaders;
+  }
+
   /**
    * Outlook UI may create a Sent Items copy with a different immutable ID.
-   * Scan only this delegated user's Sent Items for the draft's opaque header.
+   * Scan only this delegated user's Sent Items. Read each candidate's opaque
+   * header through Get message, then fetch the sole match in full upstream.
    * A partial scan or duplicate header is never evidence that mail was sent.
    */
   async findSentByCorrelation(correlationId, claimedAtUtc) {
@@ -179,11 +197,15 @@ export class GraphClient {
         const sentEpoch = Date.parse(item?.sentDateTime ?? '');
         if (typeof item?.id !== 'string' || item.id.length < 8 ||
             item.id.length > 2048 ||
-            !Array.isArray(item.internetMessageHeaders) ||
             !Number.isFinite(sentEpoch) || sentEpoch < lowerBoundEpoch) {
           throw new HeldActionError('SENT_SCAN_INCOMPLETE');
         }
-        if (correlationIdOf(item) === correlationId) matches.add(item.id);
+        let headers;
+        try { headers = await this.getMessageHeaders(item.id); }
+        catch { throw new HeldActionError('SENT_SCAN_INCOMPLETE'); }
+        if (correlationIdOf({internetMessageHeaders: headers}) === correlationId) {
+          matches.add(item.id);
+        }
       }
       if (!data['@odata.nextLink']) {
         if (matches.size > 1) throw new HeldActionError('SENT_SCAN_AMBIGUOUS');
