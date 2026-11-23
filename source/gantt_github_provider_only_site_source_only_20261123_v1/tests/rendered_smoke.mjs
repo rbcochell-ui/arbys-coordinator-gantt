@@ -139,7 +139,7 @@ export async function prepareProviderOnlySite() {
         woNumber:'900001',agentCode:'A1',
         workOrderStatus:'Pending Readiness',
         observedAtUtc:'2026-11-23T15:00:00Z',
-        to:['manager@example.com','planner@example.com'],cc:[],
+        to:['manager@example.invalid','planner@example.invalid'],cc:[],
         recipientReviewRequired:false};},
     async createOrOpenProviderDraft(id){calls.push(['providerDraft',id]);
       return {state:'draft',webLink:
@@ -189,7 +189,7 @@ export async function prepareProviderOnlySite() {
   await enabledPage.waitForFunction(() =>
     document.getElementById('providerDraftAction')?.disabled === false);
   assert.deepEqual(await enabledPage.locator('#toReview').inputValue(),
-    'manager@example.com; planner@example.com');
+    'manager@example.invalid; planner@example.invalid');
   assert.equal(await enabledPage.locator('#selectedWorkOrder').textContent(),
     'WO number: 900001');
   assert.equal(await enabledPage.locator('#selectedAgent').textContent(),

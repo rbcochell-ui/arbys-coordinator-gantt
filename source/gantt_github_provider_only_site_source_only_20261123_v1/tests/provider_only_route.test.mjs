@@ -14,20 +14,20 @@ import {ProviderSourceResolver} from
   '../../github_gantt_graph_actions_lean_source_only_20261122_v3/provider_source.mjs';
 
 const WO = '0WO000000000000GAA';
-const SITE = 'groups.coca-cola.com,00000000-0000-4000-8000-000000000001,00000000-0000-4000-8000-000000000002';
-const IDS = Object.freeze({tenant: '00000000-0000-4000-8000-000000000010',
-  client: '00000000-0000-4000-8000-000000000011',
-  coordinator: '00000000-0000-4000-8000-000000000012',
-  owner: '00000000-0000-4000-8000-000000000018',
-  wo: '00000000-0000-4000-8000-000000000013',
-  contacts: '00000000-0000-4000-8000-000000000014',
-  claims: '00000000-0000-4000-8000-000000000015',
-  receipts: '00000000-0000-4000-8000-000000000016',
-  legacy: '00000000-0000-4000-8000-000000000017'});
+const SITE = 'groups.coca-cola.com,11111111-0000-4000-8000-000000000001,11111111-0000-4000-8000-000000000002';
+const IDS = Object.freeze({tenant: '11111111-0000-4000-8000-000000000010',
+  client: '11111111-0000-4000-8000-000000000011',
+  coordinator: '11111111-0000-4000-8000-000000000012',
+  owner: '11111111-0000-4000-8000-000000000018',
+  wo: '11111111-0000-4000-8000-000000000013',
+  contacts: '11111111-0000-4000-8000-000000000014',
+  claims: '11111111-0000-4000-8000-000000000015',
+  receipts: '11111111-0000-4000-8000-000000000016',
+  legacy: '11111111-0000-4000-8000-000000000017'});
 
 function source(overrides = {}) {
   return {nativeWoId: WO, woNumber: '900001', agentCode: 'A1',
-    to: ['manager@example.com', 'planner@example.com'],
+    to: ['manager@example.invalid', 'planner@example.invalid'],
     recipientReviewRequired: false, validUntilMs: Date.now() + 60_000,
     ...overrides};
 }
@@ -60,7 +60,7 @@ function config() {
 async function protectedSource({contactChange = null, woChange = null,
     noContact = false} = {}) {
   const nowMs = Date.parse('2026-11-23T15:10:00Z');
-  const actor = {id: IDS.coordinator, address: 'coordinator@example.com'};
+  const actor = {id: IDS.coordinator, address: 'coordinator@example.invalid'};
   const acn = '12345';
   const store = '10001';
   const keyBytes = await globalThis.crypto.subtle.digest('SHA-256',
@@ -78,8 +78,8 @@ async function protectedSource({contactChange = null, woChange = null,
   const contactFields = {ContactKey: contactKey, AgentCode: 'A1',
     OutletACN: acn, StoreNumber: store,
     ServiceAddressKey: woFields.ServiceAddressKey,
-    InstallManagerEmail: 'manager@example.com',
-    PlannerEmail: 'planner@example.com', Verified: true,
+    InstallManagerEmail: 'manager@example.invalid',
+    PlannerEmail: 'planner@example.invalid', Verified: true,
     VerifiedAtUtc: '2026-11-22T12:00:00Z',
     SourceCheckedAtUtc: '2026-11-23T14:00:00Z',
     SourceEvidenceDigest: 'b'.repeat(64), ...contactChange};
@@ -138,9 +138,9 @@ test('provider-only config has no Customer Release or FORM/Case dependency', () 
 test('only an exact distinct verified two-role pair can reach the writer', () => {
   assert.equal(requireVerifiedRolePair(source()).agentCode, 'A1');
   for (const change of [
-    {to: []}, {to: ['manager@example.com']},
-    {to: ['same@example.com', 'same@example.com']},
-    {to: ['manager@example.com', 'bad address']},
+    {to: []}, {to: ['manager@example.invalid']},
+    {to: ['same@example.invalid', 'same@example.invalid']},
+    {to: ['manager@example.invalid', 'bad address']},
     {recipientReviewRequired: true},
     {nativeWoId: '0WO000000000000GAB'},
     {woNumber: ''}, {agentCode: ''},
@@ -160,7 +160,7 @@ test('role pair is checked again after the physical Claim', async () => {
     },
   });
   assert.deepEqual((await wrapped.resolve(WO, {})).to,
-    ['manager@example.com', 'planner@example.com']);
+    ['manager@example.invalid', 'planner@example.invalid']);
   await assert.rejects(() => wrapped.confirmUnchanged(source(), {}),
     /PROVIDER_ROLE_PAIR_NOT_VERIFIED/);
   assert.equal(confirmations, 1);
@@ -169,13 +169,13 @@ test('role pair is checked again after the physical Claim', async () => {
 test('provider preview shows the current WO and both roles before arming',
     async () => {
   const nowMs = Date.parse('2026-11-23T15:00:00Z');
-  let detailTo = ['manager@example.com', 'planner@example.com'];
+  let detailTo = ['manager@example.invalid', 'planner@example.invalid'];
   let status = 'eligible';
   const actions = {
     async preview(kind, id) {
       return {kind, id, status, storeNumber: '10001',
         to: status === 'eligible' ?
-          ['manager@example.com', 'planner@example.com'] : [],
+          ['manager@example.invalid', 'planner@example.invalid'] : [],
         cc: [], recipientReviewRequired: false,
         validUntilUtc: '2026-11-23T15:05:00Z'};
     },
@@ -200,10 +200,10 @@ test('provider preview shows the current WO and both roles before arming',
   assert.equal(preview.workOrderStatus, 'Pending Readiness');
   assert.equal(preview.observedAtUtc, '2026-11-23T14:50:00Z');
   assert.deepEqual(preview.to,
-    ['manager@example.com', 'planner@example.com']);
+    ['manager@example.invalid', 'planner@example.invalid']);
   status = 'draft_occupied';
   assert.equal((await adapter.preview('provider', WO)).canDraft, true);
-  detailTo = ['changed@example.com', 'planner@example.com'];
+  detailTo = ['changed@example.invalid', 'planner@example.invalid'];
   status = 'eligible';
   await assert.rejects(() => adapter.preview('provider', WO),
     /PROVIDER_PREVIEW_CHANGED_DURING_READ/);
@@ -219,7 +219,7 @@ test('protected List reader joins current native WO and distinct role contacts',
   assert.equal(first.nativeWoId, WO);
   assert.equal(first.woNumber, '900001');
   assert.equal(first.agentCode, 'A1');
-  assert.deepEqual(first.to, ['manager@example.com', 'planner@example.com']);
+  assert.deepEqual(first.to, ['manager@example.invalid', 'planner@example.invalid']);
   assert.equal((await resolver.confirmUnchanged(first, actor)).digest,
     first.digest);
 });
@@ -227,7 +227,7 @@ test('protected List reader joins current native WO and distinct role contacts',
 test('no contact, shared email, or held WO never reaches a draft', async () => {
   for (const variant of [
     {noContact: true},
-    {contactChange: {PlannerEmail: 'manager@example.com'}},
+    {contactChange: {PlannerEmail: 'manager@example.invalid'}},
     {contactChange: {Verified: false}},
     {contactChange: {AgentCode: 'B2'}},
     {woChange: {WorkOrderStatus: 'Closed'}},
