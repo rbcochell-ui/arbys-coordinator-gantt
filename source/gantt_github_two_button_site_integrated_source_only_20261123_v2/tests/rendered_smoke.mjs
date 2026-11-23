@@ -237,7 +237,10 @@ export async function prepareIntegratedSite({panelElements}) {
     /Sent Items confirms/u);
   assert.equal((await enabledPage.evaluate(() => window.__fakeCalls))
     .filter(call => call[0] === 'providerDraft').length, 1);
-  await enabledPage.frameLocator('#chart').locator('#customer').click();
+  // Synthetic visibility/focus can leave Playwright's pointer state stale.
+  // Iframe selection messages do not require a trusted click.
+  await enabledPage.frameLocator('#chart').locator('#customer')
+    .evaluate(element => element.click());
   await enabledPage.waitForFunction(() =>
     window.__fakeCalls.some(call => call[0] === 'preview' &&
       call[1] === 'customer'));
@@ -259,7 +262,8 @@ export async function prepareIntegratedSite({panelElements}) {
   await enabledPage.evaluate(() => {
     window.__fakePreviewStatus.provider = 'draft_status_unverified';
   });
-  await enabledPage.frameLocator('#chart').locator('#provider').click();
+  await enabledPage.frameLocator('#chart').locator('#provider')
+    .evaluate(element => element.click());
   await enabledPage.waitForFunction(() =>
     document.getElementById('actionStatus')?.textContent.includes(
       'Another coordinator owns an unresolved draft'));
@@ -272,7 +276,8 @@ export async function prepareIntegratedSite({panelElements}) {
   assert.equal((await enabledPage.evaluate(() => window.__fakeCalls))
     .filter(call => call[0] === 'checkSent' && call[1] === 'provider')
     .length, 1);
-  await enabledPage.frameLocator('#chart').locator('#invalid').click();
+  await enabledPage.frameLocator('#chart').locator('#invalid')
+    .evaluate(element => element.click());
   await enabledPage.waitForFunction(() =>
     document.getElementById('selectedIdentity')?.textContent ===
       'Exact source ID: none selected');
