@@ -285,8 +285,12 @@ export class ClaimReceiptStore {
     return {claim, draft, attempt, sent};
   }
 
-  async createClaim(dispatchKey, actor, source, attemptId, correlationId) {
+  async createClaim(dispatchKey, actor, source, attemptId, correlationId,
+      beforeFetch = undefined) {
     const action = actionOf(dispatchKey);
+    if (beforeFetch !== undefined && typeof beforeFetch !== 'function') {
+      fail('CLAIM_PREFLIGHT_INVALID');
+    }
     if ((action.kind === 'provider-parts' && source.nativeWoId !== action.entity) ||
         (action.kind === 'customer-tracker' && source.formSourceKey !== action.entity)) {
       fail('CLAIM_SOURCE_KEY_MISMATCH');
@@ -300,11 +304,30 @@ export class ClaimReceiptStore {
     };
     assertNoCapability(fields);
     let created;
+    let preflightFailure = null;
     try {
       created = await this.graph.request(`${this.claimBase}/items`, {
         method: 'POST', scopes: GRAPH_SCOPES.lists, body: {fields},
+        beforeFetch: beforeFetch === undefined ? undefined : () => {
+          try {
+            const result = beforeFetch();
+            if (result && typeof result.then === 'function') {
+              fail('ASYNC_CLAIM_PREFLIGHT_NOT_ALLOWED');
+            }
+          } catch (error) {
+            preflightFailure = error;
+            throw error;
+          }
+        },
       });
-    } catch { fail('CLAIM_OUTCOME_UNKNOWN'); }
+    } catch (error) {
+      // Only the synchronous preflight can prove the POST never started.
+      // Transport or response failures remain uncertain and occupy review.
+      if (error === preflightFailure && error instanceof HeldActionError) {
+        throw error;
+      }
+      fail('CLAIM_OUTCOME_UNKNOWN');
+    }
     if (created.status !== 201 || !/^[1-9][0-9]*$/.test(String(created.data?.id ?? ''))) {
       fail('CLAIM_OUTCOME_UNKNOWN');
     }

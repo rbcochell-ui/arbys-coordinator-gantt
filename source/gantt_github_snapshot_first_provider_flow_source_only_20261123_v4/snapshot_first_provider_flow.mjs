@@ -48,6 +48,9 @@ async function sha256Bytes(bytes) {
   return [...new Uint8Array(digest)]
     .map(byte => byte.toString(16).padStart(2, '0')).join('');
 }
+async function sha256Text(value) {
+  return sha256Bytes(new TextEncoder().encode(value));
+}
 function utcMs(value, code) {
   if (typeof value !== 'string' || !UTC.test(value)) fail(code);
   const ms = Date.parse(value);
@@ -214,6 +217,52 @@ function pairFor(source, facts) {
   }
   return Object.freeze({manager, planner, to: Object.freeze(unique)});
 }
+async function providerPreviewBinding(c, join, pair) {
+  return Object.freeze({
+    nativeWoId: c.source.id,
+    releaseSourceSha256: await sha256Text(JSON.stringify([
+      c.binding, c.source, c.facts.datedPhase, c.facts.scopeClass])),
+    protectedJoinSha256: await sha256Text(join.binding),
+    to: Object.freeze([...pair.to]), cc: Object.freeze([]),
+    validUntilMs: join.validUntilMs,
+  });
+}
+function requireProviderPreviewBinding(value, id, nowMs) {
+  const keys = ['nativeWoId', 'releaseSourceSha256',
+    'protectedJoinSha256', 'to', 'cc', 'validUntilMs'];
+  if (!object(value) || Object.keys(value).length !== keys.length ||
+      keys.some(name => !Object.hasOwn(value, name)) ||
+      value.nativeWoId !== id ||
+      !SHA.test(value.releaseSourceSha256 ?? '') ||
+      !SHA.test(value.protectedJoinSha256 ?? '') ||
+      !Array.isArray(value.to) || ![1, 2].includes(value.to.length) ||
+      value.to.some(address => typeof address !== 'string' ||
+        !address || address.length > 254) ||
+      new Set(value.to).size !== value.to.length ||
+      !Array.isArray(value.cc) || value.cc.length !== 0 ||
+      !Number.isSafeInteger(value.validUntilMs)) {
+    fail('PROVIDER_PREVIEW_BINDING_INVALID');
+  }
+  if (!Number.isFinite(nowMs) || nowMs >= value.validUntilMs) {
+    fail('PROVIDER_PREVIEW_EXPIRED');
+  }
+  return value;
+}
+function compareProviderPreviewBinding(expected, current) {
+  if (JSON.stringify(expected.to) !== JSON.stringify(current.to) ||
+      JSON.stringify(expected.cc) !== JSON.stringify(current.cc)) {
+    fail('PROVIDER_PREVIEW_RECIPIENTS_CHANGED');
+  }
+  if (expected.releaseSourceSha256 !== current.releaseSourceSha256) {
+    fail('PROVIDER_PREVIEW_RELEASE_SOURCE_CHANGED');
+  }
+  if (expected.protectedJoinSha256 !== current.protectedJoinSha256) {
+    fail('PROVIDER_PREVIEW_PROTECTED_JOIN_CHANGED');
+  }
+  if (current.validUntilMs < expected.validUntilMs) {
+    fail('PROVIDER_PREVIEW_WINDOW_CHANGED');
+  }
+}
 function numericIdentity(value) {
   if (typeof value !== 'string' || !/^[0-9]+$/u.test(value) ||
       /^0+$/u.test(value)) return null;
@@ -248,7 +297,7 @@ function exactJoinReceipt(result, c, pair, nowMs) {
       result.woNumber !== wo.number ||
       result.workOrderStatus !== c.facts.datedPhase ||
       result.recipientReviewRequired !== false ||
-      !Array.isArray(result.to) || result.to.length !== 2 ||
+      !Array.isArray(result.to) || ![1, 2].includes(result.to.length) ||
       JSON.stringify(result.to) !== JSON.stringify(pair.to) ||
       !SHA.test(result.digest ?? '') ||
       typeof result.etagsJson !== 'string' ||
@@ -435,12 +484,27 @@ export function createSnapshotFirstProviderFlow({enabled = false,
         'preinstall_snapshot_candidate' && c.facts.scopeClass === 'known_other';
       const relocationHeld = c.source.eligibility ===
         'preinstall_snapshot_candidate' && c.source.visitKind === 'Relocation';
+      let joinReasonCode = null;
+      let recipientsVerified = false;
+      if (c.source.eligibility === 'preinstall_snapshot_candidate' &&
+          !scopeExcluded && !relocationHeld) {
+        try {
+          eligible(c.source, c.facts);
+          const pair = pairFor(c.source, c.facts);
+          await joined(c, pair, await actor());
+          recipientsVerified = true;
+        } catch (error) {
+          joinReasonCode = /^[A-Z0-9_]{3,80}$/u.test(error?.code ?? '') ?
+            error.code : 'PROTECTED_PROVIDER_JOIN_UNVERIFIED';
+        }
+      }
       return Object.freeze({kind: 'provider', id: c.source.id,
         eligibility: scopeExcluded ? 'scope_excluded' :
-          relocationHeld ? 'relocation_review' : c.source.eligibility,
+          relocationHeld ? 'relocation_review' :
+            joinReasonCode ? 'linkage_held' : c.source.eligibility,
         reasonCode: scopeExcluded ? 'VISIT_SCOPE_EXCLUDED' :
           relocationHeld ? 'PROTECTED_RELOCATION_CLASSIFICATION_UNREVIEWED' :
-            c.source.reasonCode,
+            joinReasonCode ?? c.source.reasonCode,
         scopeClass: c.facts.scopeClass,
         sourceAsOfUtc: c.source.sourceAsOfUtc,
         chartSnapshotAsOfDate: c.source.chartSnapshotAsOfDate,
@@ -448,8 +512,10 @@ export function createSnapshotFirstProviderFlow({enabled = false,
         thirstyUrl: c.source.thirstyUrl,
         woNumber: c.source.woNumber, agentCode: c.source.agentCode,
         storeNumber: c.source.storeNumber,
-        recipientSuggestion: c.source.recipientSuggestion,
-        to: c.source.to, cc: c.source.cc,
+        recipientSuggestion: recipientsVerified ?
+          c.source.recipientSuggestion : 'none',
+        to: recipientsVerified ? c.source.to : Object.freeze([]),
+        cc: Object.freeze([]),
         canDraft: false, isCurrentThirstyState: false});
     },
     async preview(nativeWoId) {
@@ -476,14 +542,17 @@ export function createSnapshotFirstProviderFlow({enabled = false,
       if (state.status !== 'absent') {
         return occupiedActionPreview(id, key, state);
       }
+      const binding = await providerPreviewBinding(c, join, pair);
+      currentSelection(selectionPort, selection, id);
       return Object.freeze({kind: 'provider', id: c.source.id,
         dispatchKey: key, status: 'eligible', storeNumber: c.source.storeNumber,
         scopeReviewRequired: c.facts.scopeClass !== 'fountain',
         to: c.source.to, cc: [],
         recipientReviewRequired: true, webLink: null,
-        validUntilUtc: new Date(join.validUntilMs).toISOString()});
+        validUntilUtc: new Date(join.validUntilMs).toISOString(),
+        binding});
     },
-    async draft(nativeWoId) {
+    async draft(nativeWoId, previewBinding) {
       if (enabled !== true) fail('SNAPSHOT_PROVIDER_DRAFTS_DISABLED');
       const id = exactNativeWoId(nativeWoId);
       if (inFlight.has(id)) fail('SNAPSHOT_DRAFT_ALREADY_IN_PROGRESS');
@@ -496,14 +565,21 @@ export function createSnapshotFirstProviderFlow({enabled = false,
         const before = await observe(key, user);
         if (before.status !== 'absent') {
           currentSelection(selectionPort, selection, id);
+          if (previewBinding != null) {
+            fail('PROVIDER_CLAIM_CHANGED_SINCE_PREVIEW');
+          }
           const resumed = writerResult(await actionPort.resume(key, user));
           currentSelection(selectionPort, selection, id);
           return resumed;
         }
+        const expectedPreview = requireProviderPreviewBinding(
+          previewBinding, id, now());
         const first = await readSource(id);
         eligible(first.source, first.facts);
         const pair = pairFor(first.source, first.facts);
         const firstJoin = await joined(first, pair, user);
+        compareProviderPreviewBinding(expectedPreview,
+          await providerPreviewBinding(first, firstJoin, pair));
         await selectionPort.ensureReady(id);
         currentSelection(selectionPort, selection, id);
         // This is an unsent Outlook draft. The coordinator checks current
@@ -520,16 +596,19 @@ export function createSnapshotFirstProviderFlow({enabled = false,
             latest.facts.datedPhase !== first.facts.datedPhase) {
           fail('GANTT_RELEASE_CHANGED_BEFORE_CLAIM');
         }
+        compareProviderPreviewBinding(expectedPreview,
+          await providerPreviewBinding(latest, latestJoin, latestPair));
         const latestActor = await actor();
         if (latestActor.id !== user.id ||
             latestActor.address !== user.address) fail('COORDINATOR_CHANGED');
         currentSelection(selectionPort, selection, id);
+        requireProviderPreviewBinding(expectedPreview, id, now());
         const raced = await observe(key, user);
         if (raced.status !== 'absent') {
-          const resumed = writerResult(await actionPort.resume(key, user));
           currentSelection(selectionPort, selection, id);
-          return resumed;
+          fail('PROVIDER_CLAIM_CHANGED_SINCE_PREVIEW');
         }
+        requireProviderPreviewBinding(expectedPreview, id, now());
         const content = buildSnapshotProviderContent(first.source, pair);
         let afterClaimCalls = 0;
         const verifySourceAfterClaim = async () => {
@@ -550,11 +629,15 @@ export function createSnapshotFirstProviderFlow({enabled = false,
               post.facts.datedPhase !== first.facts.datedPhase) {
             fail('GANTT_RELEASE_CHANGED_AFTER_CLAIM');
           }
+          compareProviderPreviewBinding(expectedPreview,
+            await providerPreviewBinding(post, postJoin, postPair));
+          requireProviderPreviewBinding(expectedPreview, id, now());
           return Object.freeze({releaseItemId: post.release.id,
             releaseETag: post.release.etag,
             decryptedHtmlSha256: post.release.fields.DecryptedHtmlSha256,
             exactJoinBinding: postJoin.binding,
-            validUntilUtc: new Date(Math.min(firstJoin.validUntilMs,
+            validUntilUtc: new Date(Math.min(expectedPreview.validUntilMs,
+              firstJoin.validUntilMs,
               latestJoin.validUntilMs,
               postJoin.validUntilMs)).toISOString()});
         };
@@ -565,47 +648,17 @@ export function createSnapshotFirstProviderFlow({enabled = false,
           recipientSuggestion: first.source.recipientSuggestion,
           datedPhase: first.facts.datedPhase, content,
           exactJoinBinding: firstJoin.binding,
+          previewValidUntilMs: expectedPreview.validUntilMs,
           verifySourceAfterClaim,
         }));
         if (afterClaimCalls === 0) {
-          if (result?.status === 'legacy_occupied' &&
-              result?.dispatchKey === key &&
-              result?.reusedExistingClaim !== true) {
-            // The owner-signed historical inventory may have changed after
-            // the last observe. No Claim was made by this attempt; confirm
-            // occupancy again before returning the held state.
-            const occupied = await observe(key, user);
-            if (occupied.status !== 'legacy_occupied') {
-              fail('LEGACY_OCCUPANCY_CHANGED');
-            }
-            const resumed = writerResult(await actionPort.resume(key, user));
-            if (resumed.status !== 'legacy_occupied' ||
-                resumed.dispatchKey !== key) {
-              fail('LEGACY_OCCUPANCY_CHANGED');
-            }
-            const resumedActor = await actor();
-            if (resumedActor.id !== user.id ||
-                resumedActor.address !== user.address) {
-              fail('COORDINATOR_CHANGED');
-            }
-            currentSelection(selectionPort, selection, id);
-            return resumed;
+          if (result?.reusedExistingClaim === true ||
+              result?.status === 'legacy_occupied') {
+            // The eligible preview observed an absent key. A newly occupied
+            // key must be reviewed through a fresh occupied preview.
+            fail('PROVIDER_CLAIM_CHANGED_SINCE_PREVIEW');
           }
-          if (result?.reusedExistingClaim !== true) {
-            fail('POSTCLAIM_RECHECK_MISSING');
-          }
-          // Re-read the physical key: the writer saw a Claim created between
-          // the caller's observe and its own read, so it made no new Claim.
-          const occupied = await observe(key, user);
-          if (occupied.status === 'absent') fail('RACED_CLAIM_UNVERIFIED');
-          const resumed = writerResult(await actionPort.resume(key, user));
-          if (resumed.status === 'not_started' ||
-              resumed.dispatchKey !== key) fail('RACED_CLAIM_UNVERIFIED');
-          const resumedActor = await actor();
-          if (resumedActor.id !== user.id ||
-              resumedActor.address !== user.address) fail('COORDINATOR_CHANGED');
-          currentSelection(selectionPort, selection, id);
-          return resumed;
+          fail('POSTCLAIM_RECHECK_MISSING');
         }
         if (afterClaimCalls !== 1 || result?.reusedExistingClaim === true) {
           fail('POSTCLAIM_RECHECK_MISSING');

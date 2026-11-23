@@ -28,7 +28,7 @@ function exactThirstyUrl(value, id) {
 }
 function recipientCopy(preview) {
   if (preview.eligibility === 'linkage_held') {
-    return 'Provider contacts are withheld until the protected Case, FORM, location, agent, and owner approval evidence is verified. No provider draft is available.';
+    return 'Provider contacts are withheld until the protected work order and verified contact pair match this dated chart. Review the work order and contact mapping before using the draft button.';
   }
   if (preview.eligibility === 'scope_excluded') {
     return 'Provider contacts are withheld because this visit is outside the six-part fountain installation request. No provider draft is available.';

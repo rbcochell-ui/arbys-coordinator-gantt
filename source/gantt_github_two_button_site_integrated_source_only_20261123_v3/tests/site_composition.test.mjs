@@ -9,7 +9,7 @@ import {prepareIntegratedSite, validateIntegrationConfig} from
 import {PICOS_PARTS} from
   '../../github_gantt_graph_actions_lean_source_only_20261122_v3/contract.mjs';
 import {buildSnapshotProviderContent} from
-  '../../gantt_github_snapshot_first_provider_flow_source_only_v5/snapshot_first_provider_flow.mjs';
+  '../../gantt_github_snapshot_first_provider_flow_source_only_20261123_v4/snapshot_first_provider_flow.mjs';
 import {GANTT_RELEASE_KEY, GANTT_RELEASE_TITLE} from
   '../../gantt_github_snapshot_first_provider_flow_source_only_20261123_v4/release_reader.mjs';
 import {sealSyntheticHtml} from './fixture_seal.mjs';
@@ -22,7 +22,9 @@ const SITE_ID = 'groups.coca-cola.com,eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee,fffff
 const LISTS = {customerReleases: 'abababab-abab-4aba-8aba-abababababab',
   claims: 'bcbcbcbc-bcbc-4bcb-8bcb-bcbcbcbcbcbc',
   receipts: 'cdcdcdcd-cdcd-4cdc-8cdc-cdcdcdcdcdcd',
-  ganttRelease: 'dededede-dede-4ded-8ded-dededededede'};
+  ganttRelease: 'dededede-dede-4ded-8ded-dededededede',
+  woSource: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+  verifiedContacts: 'ffffffff-ffff-4fff-8fff-ffffffffffff'};
 const PAYLOAD_URL = `${GANTT_APP_URL}data/gantt.enc.json`;
 
 function inventedConfig() {
@@ -36,8 +38,13 @@ function inventedConfig() {
     releaseOwnerOids: [OWNER],
     approvedCustomerReleaseKinds: ['InventedCustomerRelease/v1'],
     occupiedPilotClaimsMigrated: true, providerEnabled: false,
-    customerEnabled: true});
+    customerEnabled: true,
+    eligibleRawSpStatuses: ['OPEN - Open'],
+    eligibleWorkOrderStatuses: ['Pending Readiness'],
+    eligibleServiceTypeCodes: ['A'],
+    eligibleWorkOrderTypes: ['Installation']});
   Object.assign(config.lean.lists, {customerReleases: LISTS.customerReleases,
+    woSource: LISTS.woSource, verifiedContacts: LISTS.verifiedContacts,
     claims: LISTS.claims, receipts: LISTS.receipts});
   Object.assign(config.snapshot, {enabled: true,
     providerSnapshotEnabled: true, siteId: SITE_ID,
@@ -86,6 +93,8 @@ test('checked-in site stays disabled without MSAL, Graph or a payload', async ()
   assert.equal(INTEGRATION_CONFIG.snapshot.enabled, false);
   assert.equal(INTEGRATION_CONFIG.encryptedPayloadUrl, null);
   assert.equal(INTEGRATION_CONFIG.lean.lists.claims, null);
+  assert.equal(INTEGRATION_CONFIG.lean.lists.woSource, null);
+  assert.equal(INTEGRATION_CONFIG.lean.lists.verifiedContacts, null);
   assert.equal(INTEGRATION_CONFIG.legacyInventory, null);
   assert.equal(INTEGRATION_CONFIG.legacyOwner, null);
   let called = false;
@@ -129,6 +138,9 @@ test('active bindings require one identity, one unique List pair and exact Pages
     c => { c.auth.coordinatorOids = [OWNER]; },
     c => { c.encryptedPayloadUrl = 'https://example.invalid/chart.json'; },
     c => { c.lean.providerEnabled = true; },
+    c => { c.lean.lists.woSource = null; },
+    c => { c.lean.lists.verifiedContacts = LISTS.ganttRelease; },
+    c => { c.lean.eligibleWorkOrderStatuses = []; },
     c => { c.snapshot.emptyToDraftCanaryPassed = null; },
     c => { c.lean.customerEnabled = false; },
     c => { c.legacyInventory = null; },
@@ -179,39 +191,29 @@ test('invented active composition prepares sign-in without a Graph request', asy
     loadAuthenticatedChart: () => { throw new Error('no chart read expected'); },
     panelElements: fakeElements()});
   assert.equal(result.adapter.enabled, true);
-  assert.equal(result.providerFlow.enabled, false);
+  assert.equal(result.providerFlow.enabled, true);
   assert.equal(initialized, 1);
   assert.equal(requests, 0);
   await result.adapter.signInFromClick();
   assert.equal(popups, 1);
-  await assert.rejects(() => result.adapter.preview('provider', 'invented'),
-    error => error?.code === 'SNAPSHOT_PROVIDER_DRAFTS_DISABLED');
-  await assert.rejects(() => result.adapter.createOrOpenProviderDraft('invented'),
-    error => error?.code === 'SNAPSHOT_PROVIDER_DRAFTS_DISABLED');
+  await assert.rejects(() => result.providerFlow.preview('invented'),
+    error => error?.code === 'NATIVE_WO_ID_INVALID');
   assert.equal(requests, 0);
   assert.throws(() => result.panel.selectionPort.capture('not-selected'),
     {code: 'DATED_PREVIEW_SELECTION_REQUIRED'});
 });
 
-test('two distinct injected protected readers configure V5 without an eager read', async () => {
+test('active composition uses the built-in protected join without an eager read', async () => {
   const config = inventedConfig();
   let reads = 0;
-  const readCurrentProtectedLinkageEvidenceJson = async () => {
-    reads++; throw new Error('preflight only');
-  };
-  const readCurrentProtectedLinkageOwnerApproval = async () => {
-    reads++; throw new Error('preflight only');
-  };
   const pca = {async initialize() {},
     loginPopup: async () => { throw new Error('no login expected'); },
     acquireTokenPopup: async () => { throw new Error('unused'); },
     acquireTokenSilent: async () => { throw new Error('unused'); },
     getAllAccounts: () => []};
   const result = await prepareIntegratedSite({config,
-    readCurrentProtectedLinkageEvidenceJson,
-    readCurrentProtectedLinkageOwnerApproval,
     msalFactory: () => pca,
-    fetchImpl: () => { throw new Error('no Graph request expected'); },
+    fetchImpl: () => { reads++; throw new Error('no Graph request expected'); },
     loadAuthenticatedChart: () => { throw new Error('no chart read expected'); },
     panelElements: fakeElements()});
   assert.equal(result.adapter.enabled, true);
@@ -262,8 +264,7 @@ test('browser composition constructs the owner proof reader from reviewed pins',
     fetchImpl: () => { requests++; throw new Error('no read before click'); },
     loadAuthenticatedChart: () => { throw new Error('no chart read'); },
     panelElements: fakeElements(),
-    readCurrentProtectedLinkageEvidenceJson: async () => null,
-    readCurrentProtectedLinkageOwnerApproval: async () => null});
+    });
   assert.equal(result.adapter.enabled, true);
   assert.equal(result.providerFlow.enabled, true);
   assert.equal(requests, 0);

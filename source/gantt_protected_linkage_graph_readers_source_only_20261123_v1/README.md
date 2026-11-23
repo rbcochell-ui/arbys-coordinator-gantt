@@ -1,6 +1,6 @@
 # Protected linkage Graph readers — held source proposal
 
-This directory does not change GitHub Pages, SharePoint, Power Platform, Outlook, or the customer tracker. It adds a read-only candidate for the two callbacks required by provider V5. The checked-in Gantt still supplies neither callback and all action flags remain disabled. The tests use invented IDs and rows.
+This directory does not change GitHub Pages, SharePoint, Power Platform, Outlook, or the customer tracker. It retains a read-only candidate for the two callbacks required by the unselected provider V5 full-cohort proposal. The integrated site now composes provider V4 using fresh protected WO Source and Verified Contacts rows instead. It does not use these full-cohort callbacks; the checked-in Gantt action flags remain disabled. The tests use invented IDs and rows.
 
 ## Why the current three Lists are insufficient
 
@@ -27,6 +27,6 @@ When directory rows conflict for a selected agent, the transport returns all app
 1. Reconcile native Case claims, missing account identifiers, inbound provenance, source freshness, and conflicting provider-directory rows. Only then can an independent, current full-cohort packet and its owner approval be issued.
 2. An actual protected Evidence List and revised Release column, exact IDs and schema/ACL/People/Groups/Links readbacks, named owner write and coordinator read rights, and selected app read grants to both Lists. An Entra delegated SPA registration and consent are also unverified.
 3. A real owner approval over exact saved bytes, owner OID allowlist, ETag/modified metadata, freshness and revocation procedure; a live two-user Graph read and failure canary.
-4. Integration after sign-in: `compose_site.mjs` currently builds the linkage port before its bound Graph client and `site/view.mjs` passes no readers. Wiring needs a separately reviewed version, not merely flipping `enabled`.
+4. A separately reviewed decision to adopt this optional full-cohort design, including new List/column setup and a revised runtime. The current integrated route deliberately uses the smaller selected-WO protected join; merely flipping `enabled` cannot activate this proposed Evidence List.
 
 Run `node --test gantt_protected_linkage_graph_readers_source_only_20261123_v1/*.test.mjs` from the workspace root. The eight synthetic tests include one complete reader → existing V5 linkage-port success path with checksummed invented Salesforce IDs; they prove the local read contract only.

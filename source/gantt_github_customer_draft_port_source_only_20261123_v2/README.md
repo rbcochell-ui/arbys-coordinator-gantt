@@ -45,9 +45,12 @@ submitter email header. The protected pilot candidate receipt names
 `Primary_Contact.Name` and `Primary_Contact.Email`, records
 `originalSubmitterIdentityProved=false`, and has no completed recipient
 review. Ryan's approval of Manish as a draft recipient does not establish
-that Manish completed the FORM. The customer runtime remains held until the
-literal submitter is verified from a source record or Ryan explicitly changes
-the recipient policy to the approved primary contact.
+that Manish completed the FORM. Ryan subsequently chose to prefill the FORM
+Primary Contact as a **suggested** Outlook To for each reviewed project;
+Tony or Harmony must verify the intended customer before Send. The held
+release process still needs a fresh owner-issued Ready Release and receipt
+that pin the exact FORM key, `Primary_Contact.Email` candidate, and private
+tracker link.
 
 ## Integration contract
 
@@ -140,12 +143,12 @@ the public repository, tests, query parameters of the Gantt URL, or logs.
 - Owner-review each project's FORM contact, encrypted tracker, signed-out
   full-link result, and current source before a `Ready` Release. At the dated
   audit, only one of 40 Gantt projects had an approved tracker and Release.
-- Resolve the recipient rule before activation: the current FORM export has
-  only `Primary_Contact.Email`, not a proved submitter email. Do not describe
-  that field as the original submitter or enable the button under a literal
-  submitter-only policy without independent identity evidence.
-- Require a freshly owner-issued Ready Release and release receipt that
-  explicitly attest review of the selected recipient for each FORM key.
+- Apply Ryan's suggested-recipient policy: use `Primary_Contact.Email` as the
+  proposed Outlook To, never call it the proven FORM submitter, and require
+  Tony or Harmony to verify the customer before Send.
+- Require a freshly owner-issued Ready Release and release receipt that pin
+  the exact FORM key, `Primary_Contact.Email` source field and proposed value,
+  and private tracker link for that project.
   The dated pilot candidate still says recipient review is pending.
 - Run attended live canaries: exact selected key, two-coordinator Claim race,
   original draft reopen, full private URL in the editable Outlook draft,

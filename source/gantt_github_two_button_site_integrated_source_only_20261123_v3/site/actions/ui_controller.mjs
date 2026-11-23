@@ -1,4 +1,5 @@
 const HELD_COPY = 'Draft actions are currently held while coordinator setup is verified.';
+const CUSTOMER_RECIPIENT_REVIEW = 'FORM Primary Contact is a suggested recipient, not proof of who clicked Submit. Verify the customer in Outlook before Send.';
 const DRAFT_LINK_HOSTS = new Set(['outlook.office.com', 'outlook.office365.com']);
 const HELD_MESSAGES = Object.freeze({
   NOT_STARTED: 'No tracked draft or Sent receipt exists yet.',
@@ -34,9 +35,25 @@ function outlookLink(href) {
       !DRAFT_LINK_HOSTS.has(url.hostname)) throw held('OUTLOOK_LINK_INVALID');
   return url.href;
 }
-function previewMessage(preview) {
+function providerBindingMatches(preview, id) {
+  const binding = preview.binding;
+  return binding?.nativeWoId === id &&
+    /^[0-9a-f]{64}$/u.test(binding.releaseSourceSha256 ?? '') &&
+    /^[0-9a-f]{64}$/u.test(binding.protectedJoinSha256 ?? '') &&
+    Array.isArray(preview.to) && [1, 2].includes(preview.to.length) &&
+    Array.isArray(preview.cc) && preview.cc.length === 0 &&
+    Array.isArray(binding.to) &&
+    JSON.stringify(binding.to) === JSON.stringify(preview.to) &&
+    Array.isArray(binding.cc) &&
+    JSON.stringify(binding.cc) === JSON.stringify(preview.cc) &&
+    binding.validUntilMs === Date.parse(preview.validUntilUtc ?? '');
+}
+function previewMessage(preview, kind) {
   switch (preview.status) {
     case 'eligible':
+      if (kind === 'customer' && preview.to.length) {
+        return `Source preview passed. ${CUSTOMER_RECIPIENT_REVIEW}`;
+      }
       return !preview.to.length
         ? 'Source preview passed. To is blank; add and verify recipients in Outlook before Send.'
         : preview.recipientReviewRequired
@@ -140,7 +157,12 @@ export function createCoordinatorActionUi({runtime, elements, getBridge,
         p.canDraft !== true) return false;
     if (p.status === 'draft_occupied') return true;
     const expiry = Date.parse(p.validUntilUtc ?? '');
-    return p.status === 'eligible' && Number.isFinite(expiry) && now() < expiry;
+    return p.status === 'eligible' && Number.isFinite(expiry) &&
+      now() < expiry &&
+      (selected.kind !== 'provider' ||
+        (providerBindingMatches(p, selected.id) &&
+          toReview.value === p.to.join('; ') &&
+          ccReview.value === p.cc.join('; ')));
   }
   function render() {
     const bridgeMatches = sameSelection(selected, getBridge()?.getSelection());
@@ -177,6 +199,10 @@ export function createCoordinatorActionUi({runtime, elements, getBridge,
           !Array.isArray(preview.to) || !Array.isArray(preview.cc)) {
         throw held('SOURCE_PREVIEW_UNVERIFIED');
       }
+      if (target.kind === 'provider' && preview.status === 'eligible' &&
+          !providerBindingMatches(preview, target.id)) {
+        throw held('PROVIDER_PREVIEW_BINDING_INVALID');
+      }
       previewState = {selection: target, epoch, preview};
       selectedStore.textContent = target.kind === 'customer'
         ? 'Store: not part of this tracker release'
@@ -184,7 +210,7 @@ export function createCoordinatorActionUi({runtime, elements, getBridge,
           : 'Store: not shown for this draft state';
       toReview.value = preview.to.join('; ');
       ccReview.value = preview.cc.join('; ');
-      setStatus(previewMessage(preview));
+      setStatus(previewMessage(preview, target.kind));
       if (preview.status === 'draft_occupied' &&
           occupiedCheckEpoch !== epoch) {
         occupiedCheckEpoch = epoch;
@@ -275,7 +301,9 @@ export function createCoordinatorActionUi({runtime, elements, getBridge,
         try { popup.location.replace(href); }
         catch { popup.close(); }
       }
-      setStatus(draftMessage(result));
+      const message = draftMessage(result);
+      setStatus(selected?.kind === 'customer'
+        ? `${message} ${CUSTOMER_RECIPIENT_REVIEW}` : message);
     } else if (result?.state === 'sent' ||
         result?.state === 'sent_with_changes') {
       popup?.close();
@@ -363,10 +391,14 @@ export function createCoordinatorActionUi({runtime, elements, getBridge,
       const epoch = selectionEpoch;
       if (target?.kind !== kind || !stillCurrent(target, epoch) ||
           !previewCanDraft()) throw held('SOURCE_PREVIEW_REQUIRED');
+      // Carry the exact eligible preview through the click. Each writer
+      // rereads its source and holds if the displayed audience changed.
+      const binding = previewState?.preview?.status === 'eligible'
+        ? previewState.preview.binding : null;
       clearDraftLink();
       const result = kind === 'provider'
-        ? await runtime.createOrOpenProviderDraft(target.id)
-        : await runtime.createOrOpenCustomerDraft(target.id);
+        ? await runtime.createOrOpenProviderDraft(target.id, binding)
+        : await runtime.createOrOpenCustomerDraft(target.id, binding);
       if (!stillCurrent(target, epoch)) { popup?.close(); return; }
       showResult(result, popup, true);
       rememberDraftResult(result, target);

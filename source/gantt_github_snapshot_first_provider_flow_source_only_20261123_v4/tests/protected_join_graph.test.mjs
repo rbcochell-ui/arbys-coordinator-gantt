@@ -143,6 +143,16 @@ test('an ACN mismatch in the protected contact row withholds recipients', async 
   assert.equal(result.recipientReviewRequired, true);
 });
 
+test('two verified roles sharing one mailbox yield one recipient', async () => {
+  const rows = fixture();
+  rows.contact.fields.PlannerEmail = rows.contact.fields.InstallManagerEmail;
+  const {graph} = graphFor(rows);
+  const result = await new ProviderSourceResolver({graph, config: config(),
+    now: () => NOW}).resolve(WO, ACTOR);
+  assert.deepEqual(result.to, ['manager@example.invalid']);
+  assert.equal(result.recipientReviewRequired, false);
+});
+
 test('a contact ETag change during the protected read stops the join', async () => {
   const rows = fixture();
   const {graph} = graphFor(rows);

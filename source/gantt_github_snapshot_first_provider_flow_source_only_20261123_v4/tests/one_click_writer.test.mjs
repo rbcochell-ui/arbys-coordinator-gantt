@@ -15,6 +15,8 @@ import {createSnapshotFirstProviderFlow} from '../snapshot_first_provider_flow.m
 import {SnapshotProviderActionWriter} from '../snapshot_provider_writer.mjs';
 import {SnapshotClaimReceiptStore} from '../snapshot_claim_store.mjs';
 import {RUNTIME_CONFIG} from '../runtime_config.mjs';
+import {createProtectedProviderJoinPort} from
+  '../../gantt_github_two_button_site_integrated_source_only_20261123_v3/src/compose_site.mjs';
 
 const OBSERVED = '2026-11-22T18:43:09Z';
 const NOW = Date.parse(OBSERVED) + 60 * 60_000;
@@ -27,7 +29,9 @@ const SITE_ID = 'groups.coca-cola.com,11111111-1111-4111-8111-111111111111,22222
 const SITE_URL = 'https://groups.coca-cola.com/sites/ArbysOperations';
 const LISTS = Object.freeze({ganttRelease: '33333333-3333-4333-8333-333333333333',
   claims: '44444444-4444-4444-8444-444444444444',
-  receipts: '55555555-5555-4555-8555-555555555555'});
+  receipts: '55555555-5555-4555-8555-555555555555',
+  woSource: '66666666-6666-4666-8666-666666666666',
+  verifiedContacts: '88888888-8888-4888-8888-888888888888'});
 const PAYLOAD_URL = 'https://example.invalid/data/gantt.enc.json';
 const SHA = value => createHash('sha256').update(value).digest('hex');
 
@@ -122,8 +126,37 @@ function config(overrides = {}) {
 class FakeGraph {
   constructor(f) {
     this.f = f;
+    const wo = f.snapshot.projects[0].cases[0].workOrders[0];
+    const key = SHA(JSON.stringify([wo.assignedSpAgentCode,
+      String(Number(wo.acn)), wo.woStore]));
+    const addressKey = '1 EXAMPLE ROAD|TESTVILLE|NY|10001';
+    const protectedWo = {id: '1', eTag: '"1"', fields: {
+      NativeWorkOrderId: wo.id, SourceComplete: true,
+      SourceObservedAtUtc: f.overlay.observedAtUtc,
+      SourceRevision: 'c'.repeat(64), NormalizedVisitKind: 'Install',
+      ActivityType: 'Installation', WorkOrderType: wo.type,
+      WorkOrderStatus: f.overlay.rows[wo.id]?.status ?? 'Pending Readiness',
+      ServiceTypeCode: 'A', AssignedAgentCode: wo.assignedSpAgentCode,
+      OutletACN: wo.acn, StoreNumber: wo.woStore,
+      ServiceAddressKey: addressKey, WorkOrderNumber: wo.number,
+    }};
+    const protectedContact = {id: '1', eTag: '"1"', fields: {
+      ContactKey: key, AgentCode: wo.assignedSpAgentCode,
+      OutletACN: wo.acn, StoreNumber: wo.woStore,
+      ServiceAddressKey: addressKey,
+      InstallManagerEmail: wo.providerContactCandidate?.installManagerEmail ??
+        'manager@example.invalid',
+      PlannerEmail: wo.providerContactCandidate?.plannerEmail ??
+        'planner@example.invalid',
+      Verified: true,
+      VerifiedAtUtc: new Date(f.nowMs - 3 * 24 * 60 * 60_000).toISOString(),
+      SourceCheckedAtUtc: new Date(f.nowMs - 60 * 60_000).toISOString(),
+      SourceEvidenceDigest: 'd'.repeat(64),
+    }};
     this.rows = new Map([[LISTS.ganttRelease, [f.release]],
-      [LISTS.claims, []], [LISTS.receipts, []]]);
+      [LISTS.claims, []], [LISTS.receipts, []],
+      [LISTS.woSource, [protectedWo]],
+      [LISTS.verifiedContacts, [protectedContact]]]);
     this.messages = new Map();
     this.claimPosts = 0;
     this.receiptPosts = 0;
@@ -136,6 +169,7 @@ class FakeGraph {
     this.failClaimAfterPersist = false;
     this.failDraftAfterPersist = false;
     this.changeReleaseAfterClaim = false;
+    this.beforeClaimFetch = null;
   }
   bindAccount() { return this; }
   async getMe() { return this.f.actor; }
@@ -167,6 +201,11 @@ class FakeGraph {
     return structuredClone(message);
   }
   async request(path, options) {
+    if (options.method === 'POST' &&
+        path.includes(`/lists/${LISTS.claims}/items`)) {
+      if (this.beforeClaimFetch) await this.beforeClaimFetch();
+    }
+    options.beforeFetch?.();
     this.requestCalls.push([path, options.method ?? 'GET']);
     assert.deepEqual(options.scopes, ['Lists.SelectedOperations.Selected']);
     const url = new URL(path, 'https://graph.microsoft.com');
@@ -178,9 +217,14 @@ class FakeGraph {
     const release = listId === LISTS.ganttRelease;
     const title = release ? GANTT_RELEASE_TITLE :
       listId === LISTS.claims ? 'Arbys Coordinator Action Claims' :
-        'Arbys Coordinator Action Receipts';
+        listId === LISTS.receipts ? 'Arbys Coordinator Action Receipts' :
+          listId === LISTS.woSource ?
+            'Arbys Provider Parts WO Action Source' :
+            'Arbys Provider Parts Verified Contacts';
     const key = release ? 'ReleaseKey' :
-      listId === LISTS.claims ? 'DispatchKey' : 'ReceiptKey';
+      listId === LISTS.claims ? 'DispatchKey' :
+        listId === LISTS.receipts ? 'ReceiptKey' :
+          listId === LISTS.woSource ? 'NativeWorkOrderId' : 'ContactKey';
     if (options.method === 'POST') {
       assert.equal(parts[6], 'items');
       assert.equal(release, false);
@@ -203,6 +247,10 @@ class FakeGraph {
       webUrl: `${SITE_URL}/Lists/Invented`}};
     if (parts[6] === 'columns') return {status: 200, data: {
       value: release ? releaseColumns() :
+        (listId === LISTS.woSource ||
+        listId === LISTS.verifiedContacts) ? [{name: key,
+          required: true, indexed: true,
+          enforceUniqueValues: true, text: {}}] :
         (listId === LISTS.claims ? CLAIM_COLUMNS : RECEIPT_COLUMNS)
           .map(name => name === 'Kind' && listId === LISTS.receipts
             ? {name, required: true, indexed: false,
@@ -239,12 +287,24 @@ function inventedExactJoin(f, id) {
     outletAcn: wo.acn, normalizedVisitKind: 'Install',
     workOrderType: wo.type, serviceTypeCode: 'A',
     workOrderStatus: f.overlay.rows[id].status,
-    to: [candidate?.installManagerEmail, candidate?.plannerEmail]
-      .filter(Boolean), recipientReviewRequired: false,
+    to: [...new Set([candidate?.installManagerEmail,
+      candidate?.plannerEmail].filter(Boolean))],
+    recipientReviewRequired: false,
     digest: SHA('invented protected WO and Contacts rows'),
     etagsJson: JSON.stringify({wo: {itemId: '1', etag: '"1"'},
       contact: {itemId: '2', etag: '"1"'}}),
     observedAtUtc: OBSERVED, validUntilMs: f.nowMs + 10 * 60_000};
+}
+function siteProtectedJoin(graph, f) {
+  return createProtectedProviderJoinPort({graph,
+    config: {siteId: SITE_ID, lists: {woSource: LISTS.woSource,
+      verifiedContacts: LISTS.verifiedContacts},
+    eligibleWorkOrderTypes: ['Installation'],
+    eligibleServiceTypeCodes: ['A'],
+    eligibleRawSpStatuses: [],
+    eligibleWorkOrderStatuses: ['Pending Readiness'],
+    emptyToDraftCanaryPassed: true},
+    now: () => f.nowMs});
 }
 function harness(options = {}) {
   const f = options.fixture ?? fixture();
@@ -265,9 +325,10 @@ function harness(options = {}) {
   const releaseReader = new GanttReleaseReader({graph,
     siteId: SITE_ID, listId: LISTS.ganttRelease,
     siteUrl: SITE_URL, payloadUrl: PAYLOAD_URL});
-  const exactJoinPort = options.exactJoinPort ?? {
+  const exactJoinPort = options.exactJoinPortFactory?.(graph, f) ??
+    options.exactJoinPort ?? {
     resolve: async (id) => inventedExactJoin(f, id)};
-  const flow = createSnapshotFirstProviderFlow({enabled: true,
+  const rawFlow = createSnapshotFirstProviderFlow({enabled: true,
     releaseReader, ownerOids: [OWNER],
     loadAuthenticatedChart: async () => ({html: htmlFor(f),
       encryptedPayloadBytes: f.ciphertextBytes,
@@ -284,7 +345,45 @@ function harness(options = {}) {
         }
       }},
     actionPort, exactJoinPort, now: () => f.nowMs});
-  return {f, graph, writer, flow, exactJoinPort};
+  // Existing writer tests model a reviewed click. Keep that preview explicit
+  // at the harness boundary while exposing the raw flow for binding failures.
+  let reviewed = null;
+  const flow = Object.freeze({...rawFlow,
+    async preview(id) {
+      reviewed = await rawFlow.preview(id);
+      return reviewed;
+    },
+    async draft(id, binding) {
+      if (arguments.length < 2) {
+        if (!reviewed || reviewed.id !== id) reviewed = await rawFlow.preview(id);
+        binding = reviewed.status === 'eligible' ? reviewed.binding : null;
+      }
+      try { return await rawFlow.draft(id, binding); }
+      finally { reviewed = null; }
+    },
+  });
+  return {f, graph, writer, flow, rawFlow, exactJoinPort};
+}
+async function occupiedDraftWithDifferentTo() {
+  const f = fixture();
+  const to = ['new-manager@example.invalid',
+    'new-planner@example.invalid'];
+  const candidate = f.snapshot.projects[0].cases[0].workOrders[0]
+    .providerContactCandidate;
+  [candidate.installManagerEmail, candidate.plannerEmail] = to;
+  seal(f);
+  const h = harness({fixture: f, exactJoinPortFactory: siteProtectedJoin});
+  const result = await h.flow.draft(WO);
+  return {to, webLink: result.webLink,
+    claim: structuredClone(h.graph.rows.get(LISTS.claims)[0]),
+    receipt: structuredClone(h.graph.rows.get(LISTS.receipts)[0]),
+    message: structuredClone(h.graph.messages.get(result.immutableId))};
+}
+function insertOccupiedDraft(graph, occupied) {
+  graph.rows.get(LISTS.claims).push(structuredClone(occupied.claim));
+  graph.rows.get(LISTS.receipts).push(structuredClone(occupied.receipt));
+  graph.messages.set(occupied.message.id,
+    structuredClone(occupied.message));
 }
 const rejectsCode = (operation, code) => assert.rejects(operation,
   error => error?.code === code);
@@ -312,6 +411,8 @@ test('one click makes one unique Claim, one unsent six-link draft and one Draft 
   const p = await h.flow.preview(WO);
   assert.equal(p.status, 'eligible');
   assert.deepEqual(p.to, ['manager@example.invalid', 'planner@example.invalid']);
+  assert.deepEqual(p.binding.to, p.to);
+  assert.equal(p.binding.validUntilMs, Date.parse(p.validUntilUtc));
   const result = await h.flow.draft(WO);
   assert.equal(result.status, 'draft');
   assert.deepEqual([h.graph.claimPosts, h.graph.draftPosts,
@@ -332,6 +433,228 @@ test('one click makes one unique Claim, one unsent six-link draft and one Draft 
   assert.equal(h.graph.requestCalls.some(([, method]) =>
     !['GET', 'POST'].includes(method)), false);
   assert.equal(typeof h.graph.sendMail, 'undefined');
+});
+
+test('site-composed protected Graph join reaches the real V4 Claim and draft writer', async () => {
+  const h = harness({exactJoinPortFactory: siteProtectedJoin});
+  const preview = await h.flow.preview(WO);
+  assert.equal(preview.status, 'eligible');
+  assert.deepEqual(preview.to,
+    ['manager@example.invalid', 'planner@example.invalid']);
+  const result = await h.flow.draft(WO);
+  assert.equal(result.status, 'draft');
+  assert.deepEqual([h.graph.claimPosts, h.graph.draftPosts,
+    h.graph.receiptPosts], [1, 1, 1]);
+  assert.ok(h.graph.requestCalls.some(([path]) =>
+    path.includes(`/lists/${LISTS.woSource}/items?`)));
+  assert.ok(h.graph.requestCalls.some(([path]) =>
+    path.includes(`/lists/${LISTS.verifiedContacts}/items?`)));
+});
+
+test('missing, changed, or expired provider preview binding holds before Claim', async () => {
+  for (const [change, code] of [
+    [() => undefined, 'PROVIDER_PREVIEW_BINDING_INVALID'],
+    [preview => ({...preview.binding,
+      to: ['unseen@example.invalid', preview.to[1]]}),
+    'PROVIDER_PREVIEW_RECIPIENTS_CHANGED'],
+    [preview => ({...preview.binding,
+      releaseSourceSha256: 'f'.repeat(64)}),
+    'PROVIDER_PREVIEW_RELEASE_SOURCE_CHANGED'],
+  ]) {
+    const h = harness();
+    const preview = await h.rawFlow.preview(WO);
+    await rejectsCode(() => h.rawFlow.draft(WO, change(preview)), code);
+    assert.deepEqual([h.graph.claimPosts, h.graph.draftPosts], [0, 0]);
+  }
+  const h = harness();
+  const preview = await h.rawFlow.preview(WO);
+  h.f.nowMs = preview.binding.validUntilMs;
+  await rejectsCode(() => h.rawFlow.draft(WO, preview.binding),
+    'PROVIDER_PREVIEW_EXPIRED');
+  assert.deepEqual([h.graph.claimPosts, h.graph.draftPosts], [0, 0]);
+});
+
+test('preview expiry during the writer legacy check stops the physical Claim', async () => {
+  const h = harness();
+  const preview = await h.rawFlow.preview(WO);
+  const inspectLegacy = h.writer._inspectLegacy.bind(h.writer);
+  h.writer._inspectLegacy = async (...args) => {
+    const proof = await inspectLegacy(...args);
+    h.f.nowMs = preview.binding.validUntilMs;
+    return proof;
+  };
+  await rejectsCode(() => h.rawFlow.draft(WO, preview.binding),
+    'PROVIDER_PREVIEW_EXPIRED');
+  assert.deepEqual([h.graph.claimPosts, h.graph.draftPosts,
+    h.graph.receiptPosts], [0, 0, 0]);
+  assert.equal(h.graph.requestCalls.every(([, method]) => method === 'GET'),
+    true);
+});
+
+test('preview expiry during Graph token wait stops the physical Claim POST', async () => {
+  const h = harness();
+  const preview = await h.rawFlow.preview(WO);
+  h.graph.beforeClaimFetch = async () => {
+    h.f.nowMs = preview.binding.validUntilMs;
+  };
+  await rejectsCode(() => h.rawFlow.draft(WO, preview.binding),
+    'PROVIDER_PREVIEW_EXPIRED');
+  assert.deepEqual([h.graph.claimPosts, h.graph.draftPosts,
+    h.graph.receiptPosts], [0, 0, 0]);
+  assert.equal(h.graph.requestCalls.every(([, method]) => method === 'GET'),
+    true);
+});
+
+test('newly approved contacts after preview cannot populate an unseen To', async () => {
+  const h = harness({exactJoinPortFactory: siteProtectedJoin});
+  const preview = await h.rawFlow.preview(WO);
+  assert.deepEqual(preview.to,
+    ['manager@example.invalid', 'planner@example.invalid']);
+  const newTo = ['new-manager@example.invalid',
+    'new-planner@example.invalid'];
+  const candidate = h.f.snapshot.projects[0].cases[0].workOrders[0]
+    .providerContactCandidate;
+  [candidate.installManagerEmail, candidate.plannerEmail] = newTo;
+  const protectedContact = h.graph.rows.get(LISTS.verifiedContacts)[0];
+  [protectedContact.fields.InstallManagerEmail,
+    protectedContact.fields.PlannerEmail] = newTo;
+  protectedContact.fields.VerifiedAtUtc =
+    new Date(NOW - 2 * 60_000).toISOString();
+  protectedContact.fields.SourceCheckedAtUtc =
+    new Date(NOW - 60_000).toISOString();
+  protectedContact.fields.SourceEvidenceDigest = 'e'.repeat(64);
+  protectedContact.eTag = '"2"';
+  h.f.ciphertextBytes = new TextEncoder()
+    .encode('invented newly approved encrypted chart bytes');
+  seal(h.f);
+  h.f.release.eTag = '"2"';
+  h.f.release.fields.ApprovedAtUtc =
+    new Date(NOW - 60_000).toISOString();
+  h.f.release.lastModifiedDateTime = new Date(NOW).toISOString();
+  await rejectsCode(() => h.rawFlow.draft(WO, preview.binding),
+    'PROVIDER_PREVIEW_RECIPIENTS_CHANGED');
+  assert.deepEqual([h.graph.claimPosts, h.graph.draftPosts,
+    h.graph.receiptPosts], [0, 0, 0]);
+  assert.equal(h.graph.requestCalls.every(([, method]) => method === 'GET'),
+    true);
+  const fresh = await h.rawFlow.preview(WO);
+  assert.deepEqual(fresh.to, newTo);
+  assert.deepEqual([h.graph.claimPosts, h.graph.draftPosts], [0, 0]);
+});
+
+test('Release and protected contact revisions after preview hold before Claim', async () => {
+  const changedRelease = harness();
+  const releasePreview = await changedRelease.rawFlow.preview(WO);
+  changedRelease.f.release.eTag = '"2"';
+  changedRelease.f.release.lastModifiedDateTime = new Date(NOW).toISOString();
+  await rejectsCode(() => changedRelease.rawFlow.draft(
+    WO, releasePreview.binding), 'PROVIDER_PREVIEW_RELEASE_SOURCE_CHANGED');
+  assert.deepEqual([changedRelease.graph.claimPosts,
+    changedRelease.graph.draftPosts], [0, 0]);
+
+  const changedJoin = harness({exactJoinPortFactory: siteProtectedJoin});
+  const joinPreview = await changedJoin.rawFlow.preview(WO);
+  changedJoin.graph.rows.get(LISTS.verifiedContacts)[0].eTag = '"2"';
+  await rejectsCode(() => changedJoin.rawFlow.draft(WO,
+    joinPreview.binding), 'PROVIDER_PREVIEW_PROTECTED_JOIN_CHANGED');
+  assert.deepEqual([changedJoin.graph.claimPosts,
+    changedJoin.graph.draftPosts], [0, 0]);
+});
+
+test('eligible preview cannot reopen another tab’s differently addressed draft', async () => {
+  const occupied = await occupiedDraftWithDifferentTo();
+  const h = harness();
+  const actions = {async preview() { throw new Error('customer unused'); },
+    async customerDraft() { throw new Error('customer unused'); },
+    async checkCustomerSent() { throw new Error('customer unused'); }};
+  const adapter = createV2ParentAdapter({enabled: true, actions,
+    signIn: async () => {}, providerFlow: h.rawFlow});
+  await adapter.signInFromClick();
+  const eligiblePreview = await adapter.preview('provider', WO);
+  assert.deepEqual(eligiblePreview.to,
+    ['manager@example.invalid', 'planner@example.invalid']);
+  await rejectsCode(() => adapter.createOrOpenProviderDraft(WO),
+    'PROVIDER_PREVIEW_BINDING_REQUIRED');
+  insertOccupiedDraft(h.graph, occupied);
+  await rejectsCode(() => adapter.createOrOpenProviderDraft(
+    WO, eligiblePreview.binding), 'PROVIDER_CLAIM_CHANGED_SINCE_PREVIEW');
+  assert.deepEqual([h.graph.claimPosts, h.graph.draftPosts,
+    h.graph.receiptPosts], [0, 0, 0]);
+
+  const occupiedPreview = await adapter.preview('provider', WO);
+  assert.equal(occupiedPreview.status, 'draft_occupied');
+  assert.equal(occupiedPreview.binding, null);
+  const reopened = await adapter.createOrOpenProviderDraft(
+    WO, occupiedPreview.binding);
+  assert.equal(reopened.state, 'draft');
+  assert.equal(reopened.webLink, occupied.webLink);
+  assert.deepEqual(h.graph.messages.get(occupied.message.id).toRecipients
+    .map(row => row.emailAddress.address), occupied.to);
+  assert.deepEqual([h.graph.claimPosts, h.graph.draftPosts,
+    h.graph.receiptPosts], [0, 0, 0]);
+});
+
+test('Claim appearing at the second observe holds the bound preview', async () => {
+  const occupied = await occupiedDraftWithDifferentTo();
+  let observes = 0;
+  let resumes = 0;
+  const h = harness({actionPortFactory: (writer, graph) => ({
+    ...portWith(writer, command => writer.createFirstDraft(command)),
+    async observe(...args) {
+      if (++observes === 4) insertOccupiedDraft(graph, occupied);
+      return writer.observe(...args);
+    },
+    async resume(...args) {
+      resumes += 1;
+      return writer.resume(...args);
+    },
+  })});
+  const preview = await h.rawFlow.preview(WO);
+  await rejectsCode(() => h.rawFlow.draft(WO, preview.binding),
+    'PROVIDER_CLAIM_CHANGED_SINCE_PREVIEW');
+  assert.equal(observes, 4);
+  assert.equal(resumes, 0);
+  assert.deepEqual([h.graph.claimPosts, h.graph.draftPosts,
+    h.graph.receiptPosts], [0, 0, 0]);
+});
+
+test('shared manager and planner mailbox makes one addressed draft and reopens it', async () => {
+  const f = fixture();
+  const candidate = f.snapshot.projects[0].cases[0].workOrders[0]
+    .providerContactCandidate;
+  candidate.plannerEmail = candidate.installManagerEmail;
+  seal(f);
+  const h = harness({fixture: f, exactJoinPortFactory: siteProtectedJoin});
+  const preview = await h.flow.preview(WO);
+  assert.deepEqual(preview.to, ['manager@example.invalid']);
+  const first = await h.flow.draft(WO);
+  assert.equal(first.status, 'draft');
+  assert.deepEqual(h.graph.messages.get(first.immutableId).toRecipients,
+    [{emailAddress: {address: 'manager@example.invalid'}}]);
+  assert.deepEqual(JSON.parse(h.graph.rows.get(LISTS.receipts)[0]
+    .fields.IntendedToJson), ['manager@example.invalid']);
+  const reopened = await h.flow.draft(WO);
+  assert.equal(reopened.status, 'draft');
+  assert.equal(reopened.webLink, first.webLink);
+  assert.deepEqual([h.graph.claimPosts, h.graph.draftPosts,
+    h.graph.receiptPosts], [1, 1, 1]);
+});
+
+test('site-composed route holds an unreviewed relocation before Claim', async () => {
+  const f = fixture();
+  const wo = f.snapshot.projects[0].cases[0].workOrders[0];
+  wo.type = 'Relocation';
+  wo.serviceType = '8 - Relocate/Remodel';
+  f.overlay.rows[WO].workOrderType = wo.type;
+  f.overlay.rows[WO].serviceType = wo.serviceType;
+  seal(f);
+  const h = harness({fixture: f, exactJoinPortFactory: siteProtectedJoin});
+  await rejectsCode(() => h.flow.preview(WO),
+    'PROTECTED_RELOCATION_CLASSIFICATION_UNREVIEWED');
+  await rejectsCode(() => h.flow.draft(WO),
+    'PROTECTED_RELOCATION_CLASSIFICATION_UNREVIEWED');
+  assert.deepEqual([h.graph.claimPosts, h.graph.draftPosts,
+    h.graph.receiptPosts], [0, 0, 0]);
 });
 
 test('first draft requires the independent protected WO and Contacts reader', () => {
@@ -394,7 +717,7 @@ test('protected contact ETag change after Claim blocks Outlook draft', async () 
   const h = harness({fixture: f, exactJoinPort: {
     async resolve(id) {
       const row = inventedExactJoin(f, id);
-      if (++reads === 3) row.etagsJson = JSON.stringify({
+      if (++reads === 4) row.etagsJson = JSON.stringify({
         wo: {itemId: '1', etag: '"1"'},
         contact: {itemId: '2', etag: '"2"'},
       });
@@ -402,7 +725,7 @@ test('protected contact ETag change after Claim blocks Outlook draft', async () 
     }}});
   await rejectsCode(() => h.flow.draft(WO),
     'PROTECTED_PROVIDER_JOIN_CHANGED');
-  assert.equal(reads, 3);
+  assert.equal(reads, 4);
   assert.deepEqual([h.graph.claimPosts, h.graph.draftPosts], [1, 0]);
 });
 
@@ -428,21 +751,19 @@ test('an existing Claim can reopen and check Sent when legacy proof is unavailab
     h.graph.receiptPosts], [1, 1, 1]);
 });
 
-test('late historical occupancy returns held without a Claim or draft', async () => {
+test('late historical occupancy holds a formerly eligible preview', async () => {
   const h = harness();
-  const key = providerDispatchKey(WO);
-  const occupied = {status: 'legacy_occupied', dispatchKey: key,
+  const occupied = {status: 'legacy_occupied',
+    dispatchKey: providerDispatchKey(WO),
     reason: 'OWNER_RECONCILIATION_REQUIRED'};
-  let observes = 0;
-  h.writer._legacyFence = async () => (++observes <= 2 ? null : occupied);
+  h.writer._legacyFence = async () => null;
   h.writer._inspectLegacy = async () => ({occupied,
     proofDigest: 'invented-occupied-proof', validUntilMs: Date.now() + 60_000});
-  const result = await h.flow.draft(WO);
-  assert.equal(result.status, 'legacy_occupied');
-  assert.equal(result.dispatchKey, key);
+  const preview = await h.rawFlow.preview(WO);
+  await rejectsCode(() => h.rawFlow.draft(WO, preview.binding),
+    'PROVIDER_CLAIM_CHANGED_SINCE_PREVIEW');
   assert.deepEqual([h.graph.claimPosts, h.graph.draftPosts,
     h.graph.receiptPosts], [0, 0, 0]);
-  assert.equal(observes >= 4, true);
 });
 
 test('snapshot parent route accepts an owner-only historical reopen without a new draft', async () => {
@@ -516,19 +837,16 @@ test('snapshot fence expiry at draft POST leaves the Claim occupied', async () =
     h.graph.receiptPosts], [1, 0, 0]);
 });
 
-test('a Claim raced into the writer is reread as occupied without a second draft', async () => {
-  const seed = harness();
-  await seed.flow.draft(WO);
-  const priorClaim = structuredClone(seed.graph.rows.get(LISTS.claims)[0]);
+test('a Claim raced into the writer cannot reopen a different To', async () => {
+  const occupied = await occupiedDraftWithDifferentTo();
   const h = harness({actionPortFactory: (writer, graph) =>
     portWith(writer, async command => {
-      graph.rows.get(LISTS.claims).push(structuredClone(priorClaim));
+      insertOccupiedDraft(graph, occupied);
       return writer.createFirstDraft(command);
     })});
-  h.f.actor = ACTOR_B;
-  const result = await h.flow.draft(WO);
-  assert.equal(result.status, 'draft_status_unverified');
-  assert.equal(result.dispatchKey, providerDispatchKey(WO));
+  const preview = await h.rawFlow.preview(WO);
+  await rejectsCode(() => h.rawFlow.draft(WO, preview.binding),
+    'PROVIDER_CLAIM_CHANGED_SINCE_PREVIEW');
   assert.deepEqual([h.graph.claimPosts, h.graph.draftPosts,
     h.graph.receiptPosts], [0, 0, 0]);
 });
@@ -645,16 +963,41 @@ test('missing or ambiguous contact holds before Claim or Outlook draft', async (
   }
 });
 
-test('shared manager/planner mailbox holds until protected roles are reviewed', async () => {
+test('shared chart mailbox holds when the protected contact pair does not match', async () => {
   const f = fixture();
   f.snapshot.projects[0].cases[0].workOrders[0]
     .providerContactCandidate.plannerEmail = 'manager@example.invalid';
   seal(f);
-  const h = harness({fixture: f});
+  const h = harness({fixture: f, exactJoinPort: {resolve: async id => ({
+    ...inventedExactJoin(f, id), to: [], recipientReviewRequired: true,
+  })}});
   await rejectsCode(() => h.flow.draft(WO),
     'PROTECTED_PROVIDER_JOIN_MISMATCH');
   assert.deepEqual([h.graph.claimPosts, h.graph.draftPosts,
     h.graph.receiptPosts], [0, 0, 0]);
+});
+
+test('dated panel withholds chart contacts until the protected pair agrees', async () => {
+  const f = fixture();
+  const h = harness({fixture: f, exactJoinPort: {resolve: async id => ({
+    ...inventedExactJoin(f, id), to: [], recipientReviewRequired: true,
+  })}});
+  const dated = await h.flow.snapshotPreview(WO);
+  assert.equal(dated.eligibility, 'linkage_held');
+  assert.equal(dated.reasonCode, 'PROTECTED_PROVIDER_JOIN_MISMATCH');
+  assert.equal(dated.recipientSuggestion, 'none');
+  assert.deepEqual(dated.to, []);
+  assert.deepEqual([h.graph.claimPosts, h.graph.draftPosts], [0, 0]);
+});
+
+test('dated panel shows recipients only after a protected pair agrees', async () => {
+  const h = harness();
+  const dated = await h.flow.snapshotPreview(WO);
+  assert.equal(dated.eligibility, 'preinstall_snapshot_candidate');
+  assert.equal(dated.recipientSuggestion, 'exact_saved_file_pair');
+  assert.deepEqual(dated.to,
+    ['manager@example.invalid', 'planner@example.invalid']);
+  assert.deepEqual([h.graph.claimPosts, h.graph.draftPosts], [0, 0]);
 });
 
 test('another coordinator sees occupied key, no link, no second Claim or draft', async () => {
@@ -1107,15 +1450,23 @@ test('snapshot writer reads old V2 provider Claim as occupied', async () => {
 test('atomic parent adapter offers provider and customer buttons without a review modal', async () => {
   const h = harness();
   const customerCalls = [];
+  const customerFormKey = 'F:123:456';
+  const customerValidUntilUtc = '2099-01-01T00:00:00Z';
+  const customerBinding = {formSourceKey: customerFormKey,
+    sourceDigest: 'a'.repeat(64),
+    sourceETagsJson: JSON.stringify({release: {itemId: '1', etag: '"1"'}}),
+    recipientEmail: 'customer@example.invalid',
+    trackerUrlSha256: 'b'.repeat(64),
+    validUntilMs: Date.parse(customerValidUntilUtc)};
   const actions = {
     async preview(kind, id) {
       customerCalls.push(['preview', kind, id]);
       return {kind, id, status: 'eligible', storeNumber: null,
         to: ['customer@example.invalid'], cc: [],
-        validUntilUtc: '2099-01-01T00:00:00Z'};
+        validUntilUtc: customerValidUntilUtc, binding: customerBinding};
     },
-    async customerDraft(id) {
-      customerCalls.push(['customerDraft', id]);
+    async customerDraft(id, binding) {
+      customerCalls.push(['customerDraft', id, binding]);
       return {status: 'draft', webLink: OUTLOOK('customer-invented')};
     },
     async checkCustomerSent(id) {
@@ -1126,13 +1477,38 @@ test('atomic parent adapter offers provider and customer buttons without a revie
   const adapter = createV2ParentAdapter({enabled: true, actions,
     signIn: async () => {}, providerFlow: h.flow});
   await adapter.signInFromClick();
-  assert.equal((await adapter.preview('provider', WO)).canDraft, true);
-  assert.equal((await adapter.createOrOpenProviderDraft(WO)).state, 'draft');
+  const providerPreview = await adapter.preview('provider', WO);
+  assert.equal(providerPreview.canDraft, true);
+  assert.deepEqual(providerPreview.binding.to, providerPreview.to);
+  assert.equal((await adapter.createOrOpenProviderDraft(
+    WO, providerPreview.binding)).state, 'draft');
   assert.equal(h.graph.draftPosts, 1);
-  await adapter.preview('customer', 'F:123:456');
-  await adapter.createOrOpenCustomerDraft('F:123:456');
-  assert.deepEqual(customerCalls, [['preview', 'customer', 'F:123:456'],
-    ['customerDraft', 'F:123:456']]);
+  const reviewed = await adapter.preview('customer', customerFormKey);
+  assert.deepEqual(reviewed.binding, customerBinding);
+  await adapter.createOrOpenCustomerDraft(customerFormKey, reviewed.binding);
+  assert.deepEqual(customerCalls, [['preview', 'customer', customerFormKey],
+    ['customerDraft', customerFormKey, customerBinding]]);
+});
+
+test('parent adapter rejects a provider preview whose binding differs from displayed To', async () => {
+  const h = harness();
+  const providerFlow = Object.freeze({...h.rawFlow,
+    async preview(id) {
+      const result = await h.rawFlow.preview(id);
+      return {...result, binding: {...result.binding,
+        to: ['unseen@example.invalid', result.to[1]]}};
+    },
+    async draft() { throw new Error('a malformed preview cannot arm a draft'); },
+  });
+  const actions = {async preview() { throw new Error('customer unused'); },
+    async customerDraft() { throw new Error('customer unused'); },
+    async checkCustomerSent() { throw new Error('customer unused'); }};
+  const adapter = createV2ParentAdapter({enabled: true, actions,
+    signIn: async () => {}, providerFlow});
+  await adapter.signInFromClick();
+  await rejectsCode(() => adapter.preview('provider', WO),
+    'PROVIDER_PREVIEW_BINDING_INVALID');
+  assert.deepEqual([h.graph.claimPosts, h.graph.draftPosts], [0, 0]);
 });
 
 test('snapshot adapter holds first draft when native WO store is missing', async () => {

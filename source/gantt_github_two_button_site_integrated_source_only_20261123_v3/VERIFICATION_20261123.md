@@ -1,5 +1,11 @@
 # V3 PR-checkout source-only verification — 2026-11-23
 
+**Historical record, superseded.** The source, test counts, imported provider
+route, and built asset named below describe an earlier local candidate. Use
+`VERIFICATION_20261123_REBUILT_v2.md` and the root
+`HELD_BUILD_MANIFEST.json` for the current held candidate. This record does
+not establish a live Pages or Outlook result.
+
 This is a local, disabled composition candidate in the Draft PR checkout. Its
 source may be visible in the PR, but it has not been deployed to Pages or
 enabled for tenant use, nor exercised against protected Case/FORM sources,

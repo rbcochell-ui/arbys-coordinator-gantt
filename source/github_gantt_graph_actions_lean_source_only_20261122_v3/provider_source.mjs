@@ -185,7 +185,6 @@ export class ProviderSourceResolver {
           throw new Error('Contact join or review not verified');
         }
         const pair = [email(c.InstallManagerEmail), email(c.PlannerEmail)];
-        if (pair[0] === pair[1]) throw new Error('Contact roles not distinct');
         const reviewedAt = timestamp(c.VerifiedAtUtc, 'CONTACT_VERIFICATION_INVALID');
         const sourceCheckedAt = timestamp(c.SourceCheckedAtUtc,
           'CONTACT_SOURCE_CHECK_INVALID');
@@ -194,10 +193,12 @@ export class ProviderSourceResolver {
           'CONTACT_VERIFICATION_STALE');
         fresh(sourceCheckedAt, nowMs, MAX_CONTACT_CHECK_AGE_MS,
           'CONTACT_SOURCE_CHECK_STALE');
-        to = pair;
+        // Both reviewed roles may use one shared inbox. Preserve the two-role
+        // verification while addressing that mailbox only once.
+        to = [...new Set(pair)];
         verified = reviewedAt;
         checked = sourceCheckedAt;
-      } catch { /* The coordinator must enter both recipients in Outlook. */ }
+      } catch { /* The coordinator must review recipients in Outlook. */ }
     }
     if (to.length === 0 && this.config.emptyToDraftCanaryPassed !== true) {
       fail('RECIPIENT_REVIEW_DRAFT_NOT_CANARIED');
@@ -223,6 +224,7 @@ export class ProviderSourceResolver {
       thirstyOwner: w.ThirstyOwnerFullName || null,
       agentCode: w.AssignedAgentCode, to: Object.freeze(to),
       recipientReviewRequired: to.length === 0, digest,
+      sharedMailboxVerified: to.length === 1 && verified !== null,
       etagsJson: canonical(etags), observedAtUtc: w.SourceObservedAtUtc,
       validUntilMs});
   }

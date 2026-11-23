@@ -137,13 +137,16 @@ function sourceForClaim(command) {
       !['Installation', 'Relocation'].includes(command.source.visitKind) ||
       typeof command.exactJoinBinding !== 'string' ||
       !command.exactJoinBinding ||
+      !Number.isSafeInteger(command.previewValidUntilMs) ||
+      command.previewValidUntilMs >
+        Date.parse(command.release.fields.ValidUntilUtc) ||
       command.recipientSuggestion !== command.source.recipientSuggestion ||
       command.dispatchKey !== providerDispatchKey(command.nativeWoId)) {
     fail('SNAPSHOT_DRAFT_COMMAND_INVALID');
   }
   const to = validTo(command.source.to);
   if (command.recipientSuggestion !== 'exact_saved_file_pair' ||
-      to.length !== 2) {
+      ![1, 2].includes(to.length)) {
     fail('SNAPSHOT_DRAFT_COMMAND_INVALID');
   }
   const expected = buildSnapshotProviderContent(command.source, {to});
@@ -324,8 +327,38 @@ export class SnapshotProviderActionWriter {
     const correlationId = this.randomUUID();
     if (!GUID.test(attemptId) || !GUID.test(correlationId) ||
         attemptId === correlationId) fail('SNAPSHOT_ATTEMPT_ID_INVALID');
-    const claim = await context.store.createClaim(command.dispatchKey,
-      context.actor, source, attemptId, correlationId);
+    // Legacy proof and Claim preparation can outlive the reviewed preview.
+    const claimNowMs = this.now();
+    if (!Number.isFinite(claimNowMs) ||
+        claimNowMs >= command.previewValidUntilMs) {
+      fail('PROVIDER_PREVIEW_EXPIRED');
+    }
+    // Graph may acquire a token before its physical POST. Recheck at its
+    // synchronous beforeFetch boundary, then distinguish that clean hold from
+    // a genuinely uncertain Claim outcome in the shared store.
+    let expiredBeforePost = false;
+    const claimStore = context.store.withGraph({
+      request: (path, options) => context.graph.request(path,
+        path === `${context.store.claimBase}/items` &&
+          options?.method === 'POST' ? {...options,
+            beforeFetch: () => {
+              const postNowMs = this.now();
+              if (!Number.isFinite(postNowMs) ||
+                  postNowMs >= command.previewValidUntilMs) {
+                expiredBeforePost = true;
+                fail('PROVIDER_PREVIEW_EXPIRED');
+              }
+              options.beforeFetch?.();
+            }} : options),
+    });
+    let claim;
+    try {
+      claim = await claimStore.createClaim(command.dispatchKey,
+        context.actor, source, attemptId, correlationId);
+    } catch (error) {
+      if (expiredBeforePost) fail('PROVIDER_PREVIEW_EXPIRED');
+      throw error;
+    }
     // The flow's callback rereads the protected Release, served ciphertext,
     // decrypted HTML, actor, and exact selection after the physical Claim.
     const post = await command.verifySourceAfterClaim();

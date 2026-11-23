@@ -24,7 +24,7 @@ function preview(eligibility) {
 }
 
 for (const [eligibility, expected] of [
-  ['linkage_held', 'protected Case, FORM, location, agent, and owner approval'],
+  ['linkage_held', 'protected work order and verified contact pair match'],
   ['scope_excluded', 'outside the six-part fountain installation request'],
 ]) {
   test(`${eligibility} explains withheld contacts without claiming no pair`, async () => {

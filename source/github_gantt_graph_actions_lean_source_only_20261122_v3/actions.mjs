@@ -18,6 +18,11 @@ function occupiedForCaller(fenced) {
 const same = (a, b) => JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
 const SHA_MARKER = /^sha256:([0-9a-f]{64})$/;
 const sharedSentReview = value => value ? 'SENT_DETAILS_CHANGED' : '';
+const CUSTOMER_SHA = /^[0-9a-f]{64}$/u;
+const CUSTOMER_BINDING_KEYS = Object.freeze([
+  'formSourceKey', 'sourceDigest', 'sourceETagsJson',
+  'recipientEmail', 'trackerUrlSha256', 'validUntilMs',
+]);
 const safeSourceErrorCode = error => error instanceof HeldActionError &&
   /^[A-Z][A-Z0-9_]{0,63}$/.test(error.code ?? '') ?
     error.code : 'READ_UNCERTAIN';
@@ -26,6 +31,52 @@ async function sha256(value) {
   const digest = await globalThis.crypto.subtle.digest('SHA-256',
     new TextEncoder().encode(value));
   return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * The displayed customer recipient and tracker marker must describe the
+ * same protected Release that is used at click. The full bearer URL never
+ * leaves the protected resolver through this binding.
+ */
+export async function customerPreviewBinding(formSourceKey, source) {
+  const key = canonicalFormSourceKey(formSourceKey);
+  const recipient = email(source?.recipientEmail);
+  const tracker = validatedCustomerTrackerUrl(source?.trackerUrl);
+  if (source?.formSourceKey !== key ||
+      !CUSTOMER_SHA.test(source?.digest ?? '') ||
+      typeof source?.etagsJson !== 'string' ||
+      !source.etagsJson || source.etagsJson.length > 4096 ||
+      !Number.isSafeInteger(source?.validUntilMs) ||
+      source.validUntilMs <= 0) {
+    fail('CUSTOMER_PREVIEW_SOURCE_INCOMPLETE');
+  }
+  return Object.freeze({formSourceKey: key,
+    sourceDigest: source.digest, sourceETagsJson: source.etagsJson,
+    recipientEmail: recipient, trackerUrlSha256: await sha256(tracker),
+    validUntilMs: source.validUntilMs});
+}
+
+export function assertCustomerPreviewBinding(expected, current, nowMs) {
+  if (!expected || typeof expected !== 'object' ||
+      Array.isArray(expected) ||
+      Object.keys(expected).length !== CUSTOMER_BINDING_KEYS.length ||
+      CUSTOMER_BINDING_KEYS.some(name => !Object.hasOwn(expected, name)) ||
+      !current || typeof current !== 'object' ||
+      !Number.isSafeInteger(nowMs) ||
+      !Number.isSafeInteger(expected.validUntilMs) ||
+      nowMs >= expected.validUntilMs) {
+    fail('CUSTOMER_PREVIEW_BINDING_REQUIRED');
+  }
+  for (const name of ['formSourceKey', 'sourceDigest',
+      'sourceETagsJson', 'recipientEmail', 'trackerUrlSha256']) {
+    if (expected[name] !== current[name]) {
+      fail('CUSTOMER_RELEASE_CHANGED_SINCE_PREVIEW');
+    }
+  }
+  if (nowMs >= current.validUntilMs) {
+    fail('CUSTOMER_RELEASE_CHANGED_SINCE_PREVIEW');
+  }
+  return true;
 }
 
 // Customer receipt rows are visible to the coordinator team. They hold only a
@@ -159,7 +210,7 @@ function intendedFromReceipt(receipt, actionKind) {
   const provider = actionKind === 'provider-parts';
   const customer = actionKind === 'customer-tracker';
   if ((!provider && !customer) || !Array.isArray(to) ||
-      (provider && ![0, 2].includes(to.length)) ||
+      (provider && ![0, 1, 2].includes(to.length)) ||
       (customer && to.length !== 1) ||
       to.some(value => typeof value !== 'string' || email(value) !== value) ||
       (to.length === 2 && to[0] === to[1]) || !Array.isArray(links) ||
@@ -367,7 +418,9 @@ export class LeanGanttActions {
       thirstyOwner: kind === 'provider' ? source.thirstyOwner : null,
       to: [...draft.to], cc: [],
       recipientReviewRequired: kind === 'provider' && draft.to.length === 0,
-      validUntilUtc: new Date(source.validUntilMs).toISOString()};
+      validUntilUtc: new Date(source.validUntilMs).toISOString(),
+      binding: kind === 'customer' ?
+        await customerPreviewBinding(id, source) : null};
   }
 
   async providerDraft(nativeWoId) {
@@ -577,21 +630,35 @@ export class LeanGanttActions {
       reviewReason: sharedSentReview(actual.reviewReason)};
   }
 
-  async customerDraft(formSourceKey) {
+  async customerDraft(formSourceKey, expectedPreviewBinding) {
     const key = canonicalFormSourceKey(formSourceKey);
     const dispatchKey = customerDispatchKey(key);
     const context = await this._context('customer');
     const existing = await context.store.getState(dispatchKey);
-    if (existing) return this._existingAction(existing, context);
+    if (existing) {
+      // An eligible preview cannot silently become a different tab's
+      // occupied draft. Refresh to review that state before reopening it.
+      if (expectedPreviewBinding != null) {
+        fail('CUSTOMER_CLAIM_CHANGED_SINCE_PREVIEW');
+      }
+      return this._existingAction(existing, context);
+    }
     const pilot = await this._inspectLegacy(dispatchKey, context.graph);
     if (pilot.occupied) return occupiedForCaller(pilot.occupied);
 
     const source = await context.source.resolve(key, context.actor);
+    const currentPreviewBinding = await customerPreviewBinding(key, source);
+    // This check is inside the action before the unique Claim. A Release
+    // edited after the visible preview cannot produce an unseen draft.
+    assertCustomerPreviewBinding(expectedPreviewBinding,
+      currentPreviewBinding, this.now());
     const content = buildCustomerDraft(source);
     const attemptId = this.randomUUID();
     const correlationId = this.randomUUID();
     const claim = await context.store.createClaim(dispatchKey, context.actor,
-      source, attemptId, correlationId);
+      source, attemptId, correlationId, () =>
+        assertCustomerPreviewBinding(expectedPreviewBinding,
+          currentPreviewBinding, this.now()));
     const current = await context.source.confirmUnchanged(source, context.actor);
     await this._sameActor(context);
     const postClaimPilot = await this._inspectLegacy(dispatchKey, context.graph,
@@ -603,7 +670,8 @@ export class LeanGanttActions {
         if (Date.now() >= postClaimPilot.validUntilMs) {
           fail('LEGACY_FENCE_UNVERIFIED');
         }
-        if (this.now() >= Math.min(source.validUntilMs, current.validUntilMs)) {
+        if (this.now() >= Math.min(expectedPreviewBinding.validUntilMs,
+          source.validUntilMs, current.validUntilMs)) {
           fail('RELEASE_WINDOW_EXPIRED_BEFORE_DRAFT');
         }
       });

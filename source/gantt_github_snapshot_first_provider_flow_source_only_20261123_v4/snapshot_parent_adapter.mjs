@@ -46,6 +46,48 @@ function requireAddresses(values) {
   }
   return Object.freeze([...values]);
 }
+function customerBinding(value, id, to, validUntilUtc) {
+  const keys = ['formSourceKey', 'sourceDigest', 'sourceETagsJson',
+    'recipientEmail', 'trackerUrlSha256', 'validUntilMs'];
+  if (!object(value) || Object.keys(value).length !== keys.length ||
+      keys.some(name => !Object.hasOwn(value, name)) ||
+      value.formSourceKey !== id ||
+      !/^[0-9a-f]{64}$/u.test(value.sourceDigest ?? '') ||
+      !/^[0-9a-f]{64}$/u.test(value.trackerUrlSha256 ?? '') ||
+      typeof value.sourceETagsJson !== 'string' ||
+      !value.sourceETagsJson || value.sourceETagsJson.length > 4096 ||
+      value.recipientEmail !== to[0] || to.length !== 1 ||
+      !Number.isSafeInteger(value.validUntilMs) ||
+      value.validUntilMs !== Date.parse(validUntilUtc)) {
+    fail('CUSTOMER_PREVIEW_BINDING_INVALID');
+  }
+  return Object.freeze(Object.fromEntries(keys.map(name =>
+    [name, value[name]])));
+}
+function providerBinding(value, id, to, cc, validUntilUtc) {
+  const keys = ['nativeWoId', 'releaseSourceSha256',
+    'protectedJoinSha256', 'to', 'cc', 'validUntilMs'];
+  if (!object(value) || Object.keys(value).length !== keys.length ||
+      keys.some(name => !Object.hasOwn(value, name)) ||
+      value.nativeWoId !== id ||
+      !/^[0-9a-f]{64}$/u.test(value.releaseSourceSha256 ?? '') ||
+      !/^[0-9a-f]{64}$/u.test(value.protectedJoinSha256 ?? '') ||
+      !Array.isArray(value.to) || ![1, 2].includes(value.to.length) ||
+      JSON.stringify(value.to) !== JSON.stringify(to) ||
+      !Array.isArray(value.cc) || value.cc.length !== 0 ||
+      JSON.stringify(value.cc) !== JSON.stringify(cc) ||
+      !Number.isSafeInteger(value.validUntilMs) ||
+      value.validUntilMs !== Date.parse(validUntilUtc)) {
+    fail('PROVIDER_PREVIEW_BINDING_INVALID');
+  }
+  return Object.freeze({
+    nativeWoId: id,
+    releaseSourceSha256: value.releaseSourceSha256,
+    protectedJoinSha256: value.protectedJoinSha256,
+    to: Object.freeze([...to]), cc: Object.freeze([...cc]),
+    validUntilMs: value.validUntilMs,
+  });
+}
 function normalizeResult(result) {
   if (!object(result) || typeof result.status !== 'string') {
     fail('V2_RESULT_UNVERIFIED');
@@ -107,6 +149,7 @@ export function createV2ParentAdapter({enabled = false, actions = null,
     checkSent: id => actions.checkSent(id),
   });
   let signedIn = false;
+  let reviewedProvider = null;
   function requireSignIn() {
     if (!signedIn) fail('SIGN_IN_REQUIRED');
   }
@@ -115,9 +158,11 @@ export function createV2ParentAdapter({enabled = false, actions = null,
     async signInFromClick() {
       await signIn();
       signedIn = true;
+      reviewedProvider = null;
     },
     async preview(kind, id) {
       requireSignIn();
+      reviewedProvider = null;
       if (kind !== 'provider' && kind !== 'customer') fail('ACTION_KIND_INVALID');
       const result = kind === 'provider'
         ? await provider.preview(id) : await actions.preview(kind, id);
@@ -136,7 +181,12 @@ export function createV2ParentAdapter({enabled = false, actions = null,
             !Number.isFinite(Date.parse(result.validUntilUtc)))) {
         fail('PREVIEW_WINDOW_UNVERIFIED');
       }
-      return Object.freeze({
+      const binding = result.status !== 'eligible' ? null :
+        kind === 'customer' ?
+          customerBinding(result.binding, id, to, result.validUntilUtc) :
+          providerBinding(result.binding, id, to, cc,
+            result.validUntilUtc);
+      const reviewed = Object.freeze({
         kind, id, status: result.status,
         canDraft: result.status === 'eligible' ||
           result.status === 'draft_occupied',
@@ -146,15 +196,30 @@ export function createV2ParentAdapter({enabled = false, actions = null,
         recipientReviewRequired: result.recipientReviewRequired === true,
         validUntilUtc: result.status === 'eligible'
           ? result.validUntilUtc : null,
+        binding,
       });
+      if (kind === 'provider') reviewedProvider = {id,
+        status: reviewed.status, binding};
+      return reviewed;
     },
-    async createOrOpenProviderDraft(id) {
+    async createOrOpenProviderDraft(id, binding) {
       requireSignIn();
-      return normalizeResult(await provider.draft(id));
+      if (reviewedProvider?.id === id &&
+          reviewedProvider.status === 'eligible' && binding == null) {
+        fail('PROVIDER_PREVIEW_BINDING_REQUIRED');
+      }
+      if (binding != null &&
+          (reviewedProvider?.id !== id ||
+            reviewedProvider.status !== 'eligible' ||
+            JSON.stringify(binding) !==
+              JSON.stringify(reviewedProvider.binding))) {
+        fail('PROVIDER_PREVIEW_BINDING_INVALID');
+      }
+      return normalizeResult(await provider.draft(id, binding));
     },
-    async createOrOpenCustomerDraft(id) {
+    async createOrOpenCustomerDraft(id, binding) {
       requireSignIn();
-      return normalizeResult(await actions.customerDraft(id));
+      return normalizeResult(await actions.customerDraft(id, binding));
     },
     async verifySentBySelection(kind, id) {
       requireSignIn();

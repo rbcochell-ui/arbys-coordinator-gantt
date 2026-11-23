@@ -151,9 +151,13 @@ const escapeHtml = value => String(value).replace(/[&<>"']/g, c => ({
 export function buildProviderDraft(source) {
   const woNumber = source?.woNumber;
   const agentCode = source?.agentCode;
+  const oneVerifiedSharedMailbox = source?.to?.length === 1 &&
+    source?.sharedMailboxVerified === true &&
+    source?.recipientReviewRequired === false;
   if (typeof woNumber !== 'string' || !/^[0-9]{5,12}$/.test(woNumber) ||
       typeof agentCode !== 'string' || !/^[A-Z][A-Z0-9]{0,9}$/.test(agentCode) ||
-      !Array.isArray(source?.to) || ![0, 2].includes(source.to.length) ||
+      !Array.isArray(source?.to) ||
+      (![0, 2].includes(source.to.length) && !oneVerifiedSharedMailbox) ||
       (source.to.length === 2 && source.to.map(email)[0] === source.to.map(email)[1])) {
     throw new HeldActionError('PROVIDER_DRAFT_SOURCE_INVALID');
   }

@@ -1,5 +1,5 @@
 /**
- * Held two-button composition. Provider uses snapshot V5 atomically; customer
+ * Held two-button composition. Provider uses snapshot V4 atomically; customer
  * uses sanitized lean Graph V3. No MSAL or Graph object is constructed while
  * the checked-in integration config is disabled.
  */
@@ -8,6 +8,8 @@ import {createPublicClientApplication} from './browser_msal_factory.mjs';
 import {prepareMsalTokenProvider} from './msal_token_provider.mjs';
 import {GraphClient} from
   '../../github_gantt_graph_actions_lean_source_only_20261122_v3/graph.mjs';
+import {ProviderSourceResolver} from
+  '../../github_gantt_graph_actions_lean_source_only_20261122_v3/provider_source.mjs';
 import {LeanGanttActions} from
   '../../github_gantt_graph_actions_lean_source_only_20261122_v3/actions.mjs';
 import {ClaimReceiptStore} from
@@ -27,13 +29,11 @@ import {assertActiveConfig, SITE_URL} from
 import {GanttReleaseReader, GANTT_RELEASE_KEY, GANTT_RELEASE_TITLE} from
   '../../gantt_github_snapshot_first_provider_flow_source_only_20261123_v4/release_reader.mjs';
 import {createSnapshotFirstProviderFlow} from
-  '../../gantt_github_snapshot_first_provider_flow_source_only_v5/snapshot_first_provider_flow.mjs';
+  '../../gantt_github_snapshot_first_provider_flow_source_only_20261123_v4/snapshot_first_provider_flow.mjs';
 import {SnapshotProviderActionWriter} from
   '../../gantt_github_snapshot_first_provider_flow_source_only_20261123_v4/snapshot_provider_writer.mjs';
 import {createV2ParentAdapter} from
   '../../gantt_github_snapshot_first_provider_flow_source_only_20261123_v4/snapshot_parent_adapter.mjs';
-import {createLinkageVerificationPort} from
-  '../../gantt_linkage_read_adapter_source_only_v1/linkage_read_adapter.mjs';
 import {createDatedProviderReviewPanel} from
   '../site/actions/dated_provider_review_panel.mjs';
 
@@ -66,9 +66,15 @@ export function validateIntegrationConfig(config) {
   try { assertActiveConfig(config.lean, 'customer'); }
   catch { fail('CUSTOMER_RUNTIME_NOT_RELEASED'); }
   const lean = config.lean;
+  // The lean provider writer remains disabled. Its protected WO/Contacts
+  // reader is shared with the snapshot-first writer and needs its own exact
+  // List and status policy binding before the provider button can be armed.
+  try { assertActiveConfig({...lean, providerEnabled: true}, 'provider'); }
+  catch { fail('PROVIDER_SOURCE_NOT_RELEASED'); }
   const snapshot = config.snapshot;
   const legacy = config.legacyInventory;
   const ids = [snapshot.lists?.ganttRelease, lean.lists?.customerReleases,
+    lean.lists?.woSource, lean.lists?.verifiedContacts,
     lean.lists?.claims, lean.lists?.receipts];
   if (lean.providerEnabled !== false || lean.customerEnabled !== true ||
       snapshot.providerSnapshotEnabled !== true ||
@@ -113,35 +119,25 @@ export function validateIntegrationConfig(config) {
   return Object.freeze({auth, payloadUrl: PAYLOAD_URL});
 }
 
-/**
- * The two independently protected, uncached readers are injected by the
- * deployment host. The served Gantt chart is never a linkage evidence reader.
- * Missing readers or callbacks aliased to the chart loader hold the route.
- */
-export function createProtectedLinkagePort({
-    readCurrentProtectedLinkageEvidenceJson = null,
-    readCurrentProtectedLinkageOwnerApproval = null,
-    approvedOwnerOids = null, loadAuthenticatedChart = null,
-    clock = Date.now} = {}) {
-  if (typeof readCurrentProtectedLinkageEvidenceJson !== 'function' ||
-      typeof readCurrentProtectedLinkageOwnerApproval !== 'function' ||
-      readCurrentProtectedLinkageEvidenceJson ===
-        readCurrentProtectedLinkageOwnerApproval ||
-      readCurrentProtectedLinkageEvidenceJson === loadAuthenticatedChart ||
-      readCurrentProtectedLinkageOwnerApproval === loadAuthenticatedChart) {
-    return null;
+/** Read the selected native WO and exact agent/store/ACN contact pair afresh. */
+export function createProtectedProviderJoinPort({graph, config,
+    now = () => Date.now()} = {}) {
+  if (typeof graph?.bindAccount !== 'function' || typeof now !== 'function') {
+    throw new TypeError('Account-pinnable delegated Graph required');
   }
-  return createLinkageVerificationPort({
-    readCurrentEvidenceJson: readCurrentProtectedLinkageEvidenceJson,
-    readOwnerApproval: readCurrentProtectedLinkageOwnerApproval,
-    approvedOwnerOids, clock});
+  return Object.freeze({
+    async resolve(nativeWoId, actor) {
+      // Pin only after the coordinator signs in. ProviderSourceResolver reads
+      // both protected Lists by exact GUID/key and rereads each item/ETag.
+      return new ProviderSourceResolver({graph: graph.bindAccount(), config,
+        now}).resolve(nativeWoId, actor);
+    },
+  });
 }
 
 export async function prepareIntegratedSite({config, loadAuthenticatedChart,
     panelElements, fetchImpl = globalThis.fetch,
     msalFactory = createPublicClientApplication,
-    readCurrentProtectedLinkageEvidenceJson = null,
-    readCurrentProtectedLinkageOwnerApproval = null,
     now = () => Date.now()} = {}) {
   if (config?.enabled !== true) {
     return Object.freeze({adapter: createV2ParentAdapter({enabled: false}),
@@ -152,11 +148,6 @@ export async function prepareIntegratedSite({config, loadAuthenticatedChart,
       typeof fetchImpl !== 'function' || typeof now !== 'function') {
     fail('SITE_DEPENDENCIES_INCOMPLETE');
   }
-  const linkagePort = createProtectedLinkagePort({
-    readCurrentProtectedLinkageEvidenceJson,
-    readCurrentProtectedLinkageOwnerApproval,
-    approvedOwnerOids: config.snapshot.releaseOwnerOids,
-    loadAuthenticatedChart, clock: now});
   let loadMigrationProof = null;
   if (config.legacyOwner?.enabled === true) {
     try {
@@ -168,6 +159,8 @@ export async function prepareIntegratedSite({config, loadAuthenticatedChart,
     createPublicClientApplication: msalFactory});
   const graph = new GraphClient({tokenProvider: auth.tokenProvider,
     fetchImpl});
+  const exactJoinPort = createProtectedProviderJoinPort({graph,
+    config: config.lean, now});
   const loadLegacyFenceProof = createReleaseInventoryLoader(
     config.legacyInventory, now);
   let legacyOwnerRecovery = null;
@@ -185,9 +178,9 @@ export async function prepareIntegratedSite({config, loadAuthenticatedChart,
   }
   const customerActions = new LeanGanttActions({config: config.lean,
     graph, now, loadLegacyFenceProof, legacyOwnerRecovery});
-  const writer = linkagePort ? new SnapshotProviderActionWriter({
+  const writer = new SnapshotProviderActionWriter({
     config: config.snapshot, graph, now, loadLegacyFenceProof,
-    legacyOwnerRecovery}) : null;
+    legacyOwnerRecovery});
   // The Release reader binds the same pinned account for every selected
   // Graph GET. Its row/ETag and served chart are reread before the first POST.
   const releaseGraph = Object.freeze({request: (path, options) =>
@@ -200,12 +193,12 @@ export async function prepareIntegratedSite({config, loadAuthenticatedChart,
   let providerFlow = null;
   const panel = createDatedProviderReviewPanel({elements: panelElements,
     loadSnapshotPreview: id => providerFlow.snapshotPreview(id)});
-  providerFlow = createSnapshotFirstProviderFlow({enabled: !!linkagePort,
+  providerFlow = createSnapshotFirstProviderFlow({enabled: true,
     releaseReader, loadAuthenticatedChart,
     ownerOids: config.snapshot.releaseOwnerOids,
     getActor: () => graph.bindAccount().getMe(),
     selectionPort: panel.selectionPort, actionPort: writer,
-    linkagePort, now});
+    exactJoinPort, now});
   const base = createV2ParentAdapter({enabled: true,
     actions: customerActions, providerFlow,
     signIn: () => auth.signInFromClick()});

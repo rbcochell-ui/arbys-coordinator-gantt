@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {buildProviderDraft, PICOS_PARTS} from '../contract.mjs';
+import {buildProviderDraft, HeldActionError, PICOS_PARTS} from '../contract.mjs';
 
 test('provider draft carries all six clickable myCoke parts in PICOS order', () => {
   const draft = buildProviderDraft({
@@ -28,4 +28,15 @@ test('provider draft carries all six clickable myCoke parts in PICOS order', () 
     ['manager@example.invalid', 'planner@example.invalid']);
   assert.match(draft.htmlBody, /Verify the current service date in Thirsty\./u);
   assert.match(draft.htmlBody, /reply with what you ordered, the order reference, and expected delivery date/u);
+});
+
+test('one shared mailbox is accepted only after both protected roles verify', () => {
+  const source = {woNumber: '900001', agentCode: 'A1',
+    to: ['shared@example.invalid'], recipientReviewRequired: false};
+  assert.throws(() => buildProviderDraft(source),
+    error => error instanceof HeldActionError &&
+      error.code === 'PROVIDER_DRAFT_SOURCE_INVALID');
+  const draft = buildProviderDraft({...source, sharedMailboxVerified: true});
+  assert.deepEqual(draft.to, ['shared@example.invalid']);
+  assert.equal(draft.requiredLinks.length, 6);
 });

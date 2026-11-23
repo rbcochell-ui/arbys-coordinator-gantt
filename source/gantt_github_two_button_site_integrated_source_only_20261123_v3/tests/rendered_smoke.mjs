@@ -150,13 +150,23 @@ export async function prepareIntegratedSite({panelElements}) {
     async signInFromClick(){calls.push(['signIn']);},
     async preview(kind,id){calls.push(['preview',kind,id]);
       const status=globalThis.__fakePreviewStatus[kind]||'eligible';
+      const to=kind==='provider'
+        ? ['manager@example.invalid','planner@example.invalid']
+        : ['customer@example.invalid'];
       return {kind,id,status,canDraft:status==='eligible',
       validUntilUtc:'2099-01-01T00:00:00Z',
       storeNumber:kind==='provider'?'1001':null,
-      to:kind==='provider'?[]:['customer@example.invalid'],cc:[],
-      recipientReviewRequired:kind==='provider'};},
-    async createOrOpenProviderDraft(id){calls.push(['providerDraft',id]);return {
-      state:'draft',reviewState:'recipient_review_required',
+      to,cc:[],recipientReviewRequired:kind==='provider',
+      binding:kind==='provider'&&status==='eligible'
+        ? {nativeWoId:id,releaseSourceSha256:'a'.repeat(64),
+          protectedJoinSha256:'b'.repeat(64),to,cc:[],
+          validUntilMs:Date.parse('2099-01-01T00:00:00Z')}
+        : null};},
+    async createOrOpenProviderDraft(id,binding){
+      if(binding?.nativeWoId!==id||binding.to?.[0]!=='manager@example.invalid')
+        throw new Error('Unbound provider draft');
+      calls.push(['providerDraft',id,binding]);return {
+      state:'draft',reviewState:'draft',recipientReviewRequired:true,
       webLink:'https://outlook.office.com/mail/deeplink/compose/invented'};},
     async createOrOpenCustomerDraft(id){calls.push(['customerDraft',id]);return {
       state:'draft',webLink:'https://outlook.office.com/mail/deeplink/compose/invented'};},
@@ -211,11 +221,12 @@ export async function prepareIntegratedSite({panelElements}) {
   assert.equal(await enabledPage.locator('#providerDraftAction').isDisabled(), false);
   assert.equal(await enabledPage.locator('#customerDraftAction').isDisabled(), true);
   assert.equal(await enabledPage.locator('#providerSourcePanel').isHidden(), false);
-  assert.equal(await enabledPage.locator('#toReview').inputValue(), '');
+  assert.equal(await enabledPage.locator('#toReview').inputValue(),
+    'manager@example.invalid; planner@example.invalid');
   await enabledPage.locator('#providerDraftAction').click();
   await enabledPage.locator('#openDraftLink').waitFor({state: 'visible'});
   assert.match(await enabledPage.locator('#actionStatus').textContent(),
-    /To needs review/u);
+    /Review recipients/u);
   assert.equal((await enabledPage.evaluate(() => window.__fakeCalls))
     .filter(call => call[0] === 'providerDraft').length, 1);
   await enabledPage.evaluate(() => {

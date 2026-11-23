@@ -50,7 +50,8 @@ async function until(predicate) {
   throw new Error('UI did not reach the expected state');
 }
 function harness({enabled = true, previewStatus = 'eligible',
-    previewTo = [], previewRecipientReviewRequired = false,
+    previewTo = undefined, previewRecipientReviewRequired = false,
+    previewBinding = undefined,
     checkResult = {state: 'sent'},
     draftResult = {state: 'draft', webLink: DRAFT_LINK}} = {}) {
   const calls = [];
@@ -65,21 +66,32 @@ function harness({enabled = true, previewStatus = 'eligible',
     async signInFromClick() { calls.push(['signIn']); },
     async preview(kind, id) {
       calls.push(['preview', kind, id]);
+      const to = previewTo ?? (kind === 'provider' ?
+        ['manager@example.invalid', 'planner@example.invalid'] : []);
+      const binding = typeof previewBinding === 'function'
+        ? previewBinding(kind, id) : previewBinding ??
+          (kind === 'provider' && previewStatus === 'eligible' ?
+            Object.freeze({nativeWoId: id,
+              releaseSourceSha256: 'a'.repeat(64),
+              protectedJoinSha256: 'b'.repeat(64),
+              to: [...to], cc: [],
+              validUntilMs: Date.parse('2099-01-01T00:00:00Z')}) : undefined);
       return {kind, id, status: previewStatus,
         canDraft: previewStatus === 'eligible' ||
           previewStatus === 'draft_occupied',
         validUntilUtc: '2099-01-01T00:00:00Z',
         storeNumber: kind === 'provider' ? '1001' : null,
-        to: previewTo, cc: [],
-        recipientReviewRequired: previewRecipientReviewRequired};
+        to, cc: [],
+        recipientReviewRequired: previewRecipientReviewRequired,
+        binding};
     },
-    async createOrOpenProviderDraft(id) {
-      calls.push(['providerDraft', id]);
+    async createOrOpenProviderDraft(id, binding) {
+      calls.push(['providerDraft', id, binding]);
       return typeof draftResult === 'function' ? draftResult('provider', id)
         : draftResult;
     },
-    async createOrOpenCustomerDraft(id) {
-      calls.push(['customerDraft', id]);
+    async createOrOpenCustomerDraft(id, binding) {
+      calls.push(['customerDraft', id, binding]);
       return typeof draftResult === 'function' ? draftResult('customer', id)
         : draftResult;
     },
@@ -130,13 +142,46 @@ test('eligible populated provider To shows review copy, never blank-To copy', as
   h.ui.dispose();
 });
 
-test('eligible empty provider To still requests entry in Outlook', async () => {
+test('an eligible provider preview without verified recipients stays held', async () => {
   const h = harness({previewTo: [],
     previewRecipientReviewRequired: true});
   h.select('provider', WO);
   await h.signIn();
-  await until(() => /To is blank/u.test(h.controls.actionStatus.textContent));
+  await until(() => /PROVIDER_PREVIEW_BINDING_INVALID/u.test(
+    h.controls.actionStatus.textContent));
   assert.equal(h.controls.toReview.value, '');
+  assert.equal(h.controls.providerDraftAction.disabled, true);
+  h.ui.dispose();
+});
+
+test('provider click carries the binding for the displayed verified pair', async () => {
+  const to = ['manager@example.invalid', 'planner@example.invalid'];
+  const binding = Object.freeze({nativeWoId: WO,
+    releaseSourceSha256: 'a'.repeat(64),
+    protectedJoinSha256: 'b'.repeat(64),
+    to: Object.freeze([...to]), cc: Object.freeze([]),
+    validUntilMs: Date.parse('2099-01-01T00:00:00Z')});
+  const h = harness({previewTo: to, previewBinding: binding});
+  h.select('provider', WO);
+  await h.signIn();
+  await until(() => h.controls.providerDraftAction.disabled === false);
+  assert.equal(h.controls.toReview.value, to.join('; '));
+  await h.controls.providerDraftAction.click();
+  assert.deepEqual(h.calls.find(call => call[0] === 'providerDraft'),
+    ['providerDraft', WO, binding]);
+  h.ui.dispose();
+});
+
+test('provider click holds if the displayed To changed after preview', async () => {
+  const h = harness();
+  h.select('provider', WO);
+  await h.signIn();
+  await until(() => h.controls.providerDraftAction.disabled === false);
+  h.controls.toReview.value = 'unseen@example.invalid';
+  await h.controls.providerDraftAction.click();
+  assert.equal(h.calls.some(call => call[0] === 'providerDraft'), false);
+  assert.match(h.controls.actionStatus.textContent,
+    /SOURCE_PREVIEW_REQUIRED/u);
   h.ui.dispose();
 });
 
@@ -264,5 +309,48 @@ test('a changed selection discards an in-flight Sent result', async () => {
     `Exact source ID: ${FORM}`);
   assert.doesNotMatch(h.controls.actionStatus.textContent,
     /Sent Items confirms/u);
+  h.ui.dispose();
+});
+
+
+test('eligible customer click carries the exact displayed Release binding', async () => {
+  const binding = Object.freeze({formSourceKey: FORM,
+    recipientEmail: 'customer@example.invalid',
+    trackerUrlSha256: 'a'.repeat(64), sourceDigest: 'b'.repeat(64),
+    sourceETagsJson: '{"release":{"etag":"1"}}',
+    validUntilMs: Date.parse('2099-01-01T00:00:00Z')});
+  const h = harness({previewTo: [binding.recipientEmail],
+    previewBinding: binding});
+  h.select('customer', FORM);
+  await h.signIn();
+  await until(() => h.controls.customerDraftAction.disabled === false);
+  assert.equal(h.controls.toReview.value, binding.recipientEmail);
+  assert.match(h.controls.actionStatus.textContent,
+    /FORM Primary Contact is a suggested recipient, not proof of who clicked Submit/u);
+  await h.controls.customerDraftAction.click();
+  assert.deepEqual(h.calls.find(call => call[0] === 'customerDraft'),
+    ['customerDraft', FORM, binding]);
+  assert.match(h.controls.actionStatus.textContent,
+    /Verify the customer in Outlook before Send/u);
+  h.ui.dispose();
+});
+
+test('customer selection change clears the old binding before a new draft', async () => {
+  const secondForm = 'F:12345678:9999999999';
+  const firstBinding = Object.freeze({formSourceKey: FORM,
+    recipientEmail: 'first@example.invalid'});
+  const secondBinding = Object.freeze({formSourceKey: secondForm,
+    recipientEmail: 'second@example.invalid'});
+  const h = harness({previewBinding: (_kind, id) =>
+    id === FORM ? firstBinding : secondBinding});
+  h.select('customer', FORM);
+  await h.signIn();
+  await until(() => h.controls.customerDraftAction.disabled === false);
+  h.select('customer', secondForm);
+  assert.equal(h.controls.customerDraftAction.disabled, true);
+  await until(() => h.controls.customerDraftAction.disabled === false);
+  await h.controls.customerDraftAction.click();
+  assert.deepEqual(h.calls.filter(call => call[0] === 'customerDraft'),
+    [['customerDraft', secondForm, secondBinding]]);
   h.ui.dispose();
 });
