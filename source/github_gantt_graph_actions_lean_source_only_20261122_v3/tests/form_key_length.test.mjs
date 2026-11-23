@@ -4,7 +4,7 @@ import {canonicalFormSourceKey, customerDispatchKey, receiptKey} from
   '../contract.mjs';
 
 test('customer FORM key leaves room for the longest unique receipt key', () => {
-  const prefix = 'F:41607755:';
+  const prefix = 'F:12345:';
   const atLimit = prefix + '1'.repeat(226 - prefix.length);
   const overLimit = `${atLimit}1`;
 

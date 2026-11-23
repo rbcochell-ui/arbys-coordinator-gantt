@@ -103,7 +103,7 @@ function harness({enabled = true, previewStatus = 'eligible',
 }
 
 test('provider preview identifies suggested recipients without calling To blank', async () => {
-  const h = harness({previewTo: ['first@example.com', 'second@example.com'],
+  const h = harness({previewTo: ['first@example.invalid', 'second@example.invalid'],
     recipientReviewRequired: true});
   h.select('provider', WO);
   await h.signIn();
