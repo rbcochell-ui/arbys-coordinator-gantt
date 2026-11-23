@@ -50,7 +50,7 @@ for (const to of [
   ['manager@example.invalid'],
   ['manager@example.invalid', 'planner@example.invalid'],
 ]) {
-  test(`verified protected ${to.length}-mailbox pair is the only Outlook prefill`, async () => {
+  test(`verified protected ${to.length}-mailbox pair prefills Outlook`, async () => {
     const ui = elements();
     const panel = createDatedProviderReviewPanel({elements: ui,
       loadSnapshotPreview: async () => ({
@@ -69,6 +69,24 @@ for (const to of [
     panel.dispose();
   });
 }
+
+test('suggested protected pair prefills Outlook with a clear review warning', async () => {
+  const ui = elements();
+  const panel = createDatedProviderReviewPanel({elements: ui,
+    loadSnapshotPreview: async () => ({
+      ...preview('preinstall_snapshot_candidate'), reasonCode: null,
+      recipientSuggestion: 'exact_saved_file_pair',
+      recipientEvidence: 'suggested_pair', recipientReviewRequired: true,
+      to: ['manager@example.invalid', 'planner@example.invalid'],
+    })});
+  panel.onSignedIn();
+  panel.onSelection({kind: 'provider', id: WO});
+  await panel.refresh();
+  assert.match(ui.recipientWarning.textContent, /prefilled in Outlook/u);
+  assert.match(ui.recipientWarning.textContent, /not verified/u);
+  assert.match(ui.recipientWarning.textContent, /Confirm both before Send/u);
+  panel.dispose();
+});
 
 test('unverified dated chart contacts are visible but Outlook To stays blank', async () => {
   const ui = elements();

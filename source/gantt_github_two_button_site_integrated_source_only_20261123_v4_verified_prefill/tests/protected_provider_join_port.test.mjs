@@ -123,12 +123,11 @@ test('site join port holds on missing sign-in or actor switch', async () => {
   assert.equal(g.reads.length, 0);
 });
 
-test('contact identity mismatch withholds the proposed recipient pair', async () => {
+test('contact identity mismatch holds the provider action', async () => {
   const data = rows();
   data.contact.fields.OutletACN = '99999999';
   const g = graphFor(data);
-  const result = await createProtectedProviderJoinPort({graph: g.graph,
-    config: config(), now: () => NOW}).resolve(WO, ACTOR);
-  assert.deepEqual(result.to, []);
-  assert.equal(result.recipientReviewRequired, true);
+  await assert.rejects(() => createProtectedProviderJoinPort({graph: g.graph,
+    config: config(), now: () => NOW}).resolve(WO, ACTOR),
+  {code: 'CONTACT_JOIN_CONFLICT'});
 });

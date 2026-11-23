@@ -103,9 +103,11 @@ function snapshotEvidence(value, id) {
         ![1, 2].includes(to.length)));
   const recipientEvidence = value.snapshot.recipientEvidence;
   const evidencedAudienceInvalid = hasEvidence &&
-    (!['verified_pair', 'dated_pair', 'manual_entry']
+    (!['verified_pair', 'suggested_pair', 'dated_pair', 'manual_entry']
       .includes(recipientEvidence) ||
       (recipientEvidence === 'manual_entry') !== (to.length === 0) ||
+      (recipientEvidence === 'suggested_pair' &&
+        value.snapshot.recipientSuggestion !== 'exact_saved_file_pair') ||
       (recipientEvidence === 'dated_pair' &&
         value.snapshot.recipientSuggestion !== 'exact_saved_file_pair'));
   if (legacyAudienceInvalid || evidencedAudienceInvalid) {

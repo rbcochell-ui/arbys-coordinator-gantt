@@ -78,7 +78,9 @@ function providerBinding(value, id, to, cc, validUntilUtc,
       (to.length === 0
         ? recipientEvidence !== 'manual_entry' ||
           recipientReviewRequired !== true
-        : recipientEvidence !== 'verified_pair') ||
+        : recipientEvidence !== 'verified_pair' &&
+          !(recipientEvidence === 'suggested_pair' &&
+            recipientReviewRequired === true)) ||
       !Array.isArray(value.cc) || value.cc.length !== 0 ||
       JSON.stringify(value.cc) !== JSON.stringify(cc) ||
       !Number.isSafeInteger(value.validUntilMs) ||

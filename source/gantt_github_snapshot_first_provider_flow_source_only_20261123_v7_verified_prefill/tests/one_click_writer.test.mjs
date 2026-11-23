@@ -285,10 +285,12 @@ function inventedExactJoin(f, id) {
   return {nativeWoId: id, woNumber: wo.number,
     agentCode: wo.assignedSpAgentCode, storeNumber: wo.woStore,
     outletAcn: wo.acn, normalizedVisitKind: 'Install',
+    serviceAddressKey: '1 EXAMPLE ROAD|TESTVILLE|NY|10001',
     workOrderType: wo.type, serviceTypeCode: 'A',
     workOrderStatus: f.overlay.rows[id].status,
     to: [...new Set([candidate?.installManagerEmail,
       candidate?.plannerEmail].filter(Boolean))],
+    recipientEvidence: 'verified_pair',
     recipientReviewRequired: false,
     digest: SHA('invented protected WO and Contacts rows'),
     etagsJson: JSON.stringify({wo: {itemId: '1', etag: '"1"'},
@@ -1012,23 +1014,83 @@ test('current protected pair may prefill when the dated chart has no contact can
   assert.deepEqual([h.graph.claimPosts, h.graph.draftPosts], [1, 1]);
 });
 
-test('unverified one-mailbox chart suggestion leaves Outlook To blank', async () => {
+test('two fresh protected suggestions prefill both roles and keep the draft in review', async () => {
+  const h = harness({exactJoinPortFactory: siteProtectedJoin});
+  const contact = h.graph.rows.get(LISTS.verifiedContacts)[0];
+  contact.fields.Verified = false;
+  contact.fields.VerifiedAtUtc = null;
+  const preview = await h.flow.preview(WO);
+  assert.equal(preview.recipientEvidence, 'suggested_pair');
+  assert.equal(preview.recipientReviewRequired, true);
+  assert.deepEqual(preview.to,
+    ['manager@example.invalid', 'planner@example.invalid']);
+  const result = await h.flow.draft(WO);
+  assert.equal(result.status, 'recipient_review_required');
+  const message = h.graph.messages.get(result.immutableId);
+  assert.equal(message.isDraft, true);
+  assert.deepEqual(message.toRecipients,
+    [{emailAddress: {address: 'manager@example.invalid'}},
+      {emailAddress: {address: 'planner@example.invalid'}}]);
+  for (const part of PICOS_PARTS) {
+    assert.ok(message.body.content.includes(`href="${part.url}"`));
+  }
+  const reopened = await h.flow.checkSent(WO);
+  assert.equal(reopened.status, 'recipient_review_required');
+  assert.deepEqual([h.graph.claimPosts, h.graph.draftPosts], [1, 1]);
+  assert.equal(typeof h.graph.sendMail, 'undefined');
+});
+
+test('a contradictory protected suggestion holds before Claim or draft', async () => {
+  for (const mutate of [
+    c => { c.PlannerEmail = 'other-planner@example.invalid'; },
+    c => { c.ServiceAddressKey = '2 EXAMPLE ROAD|TESTVILLE|NY|10001'; },
+    c => { c.SourceEvidenceDigest = ''; },
+  ]) {
+    const h = harness({exactJoinPortFactory: siteProtectedJoin});
+    const contact = h.graph.rows.get(LISTS.verifiedContacts)[0];
+    contact.fields.Verified = false;
+    contact.fields.VerifiedAtUtc = null;
+    mutate(contact.fields);
+    await assert.rejects(() => h.flow.preview(WO));
+    assert.deepEqual([h.graph.claimPosts, h.graph.draftPosts], [0, 0]);
+  }
+});
+
+test('a stale protected suggestion cannot prefill Outlook To', async () => {
+  const h = harness({exactJoinPortFactory: siteProtectedJoin});
+  const contact = h.graph.rows.get(LISTS.verifiedContacts)[0];
+  contact.fields.Verified = false;
+  contact.fields.VerifiedAtUtc = null;
+  contact.fields.SourceCheckedAtUtc = new Date(
+    NOW - 25 * 60 * 60_000).toISOString();
+  const preview = await h.flow.preview(WO);
+  assert.equal(preview.recipientEvidence, 'manual_entry');
+  assert.deepEqual(preview.to, []);
+  assert.deepEqual([h.graph.claimPosts, h.graph.draftPosts], [0, 0]);
+});
+
+test('fresh protected one-mailbox suggestion prefills a review-required draft', async () => {
   const f = fixture();
   f.snapshot.projects[0].cases[0].workOrders[0]
     .providerContactCandidate.plannerEmail = 'manager@example.invalid';
   seal(f);
   const h = harness({fixture: f, exactJoinPortFactory: siteProtectedJoin});
   h.graph.rows.get(LISTS.verifiedContacts)[0].fields.Verified = false;
+  h.graph.rows.get(LISTS.verifiedContacts)[0].fields.VerifiedAtUtc = null;
   const preview = await h.flow.preview(WO);
-  assert.equal(preview.recipientEvidence, 'manual_entry');
-  assert.deepEqual(preview.to, []);
+  assert.equal(preview.recipientEvidence, 'suggested_pair');
+  assert.deepEqual(preview.to, ['manager@example.invalid']);
+  assert.equal(preview.recipientReviewRequired, true);
   const dated = await h.flow.snapshotPreview(WO);
   assert.equal(dated.datedManagerEmail, 'manager@example.invalid');
   assert.equal(dated.datedPlannerEmail, 'manager@example.invalid');
-  assert.deepEqual(dated.to, []);
+  assert.deepEqual(dated.to, ['manager@example.invalid']);
   const result = await h.flow.draft(WO);
   assert.equal(result.status, 'recipient_review_required');
-  assert.deepEqual(h.graph.messages.get(result.immutableId).toRecipients, []);
+  assert.deepEqual(h.graph.messages.get(result.immutableId).toRecipients,
+    [{emailAddress: {address: 'manager@example.invalid'}}]);
+  assert.equal(JSON.parse(h.graph.rows.get(LISTS.claims)[0]
+    .fields.SourceETagsJson).snapshot.recipientEvidence, 'suggested_pair');
   const reopened = await h.flow.checkSent(WO);
   assert.equal(reopened.status, 'recipient_review_required');
   assert.deepEqual([h.graph.claimPosts, h.graph.draftPosts,
@@ -1112,15 +1174,18 @@ test('an ambiguous protected WO identity also hides dated contact suggestions', 
   assert.deepEqual([h.graph.claimPosts, h.graph.draftPosts], [0, 0]);
 });
 
-test('dated panel exposes unverified chart contacts only as suggestions', async () => {
+test('dated panel shows the protected unverified pair as suggestions', async () => {
   const f = fixture();
   const h = harness({fixture: f, exactJoinPortFactory: siteProtectedJoin});
   h.graph.rows.get(LISTS.verifiedContacts)[0].fields.Verified = false;
+  h.graph.rows.get(LISTS.verifiedContacts)[0].fields.VerifiedAtUtc = null;
   const dated = await h.flow.snapshotPreview(WO);
   assert.equal(dated.eligibility, 'preinstall_snapshot_candidate');
-  assert.equal(dated.recipientEvidence, 'manual_entry');
+  assert.equal(dated.recipientEvidence, 'suggested_pair');
   assert.equal(dated.recipientSuggestion, 'exact_saved_file_pair');
-  assert.deepEqual(dated.to, []);
+  assert.deepEqual(dated.to,
+    ['manager@example.invalid', 'planner@example.invalid']);
+  assert.equal(dated.recipientReviewRequired, true);
   assert.equal(dated.datedManagerEmail, 'manager@example.invalid');
   assert.equal(dated.datedPlannerEmail, 'planner@example.invalid');
   assert.deepEqual([h.graph.claimPosts, h.graph.draftPosts], [0, 0]);

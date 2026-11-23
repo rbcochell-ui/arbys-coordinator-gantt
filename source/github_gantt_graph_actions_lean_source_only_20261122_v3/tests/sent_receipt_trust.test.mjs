@@ -139,6 +139,22 @@ test('an unavailable legacy inventory does not block an owned existing Claim', a
   assert.equal(h.receiptWrites(), 0);
 });
 
+test('owned unsent customer draft stays held when its current release is unverified',
+  async () => {
+    const h = fixture();
+    h.setActor(OWNER);
+    h.state.sent = null;
+    h.message.isDraft = true;
+    h.message.parentFolderId = 'folder-drafts';
+    h.message.sentDateTime = null;
+    h.message.internetMessageId = null;
+    await assert.rejects(h.actions.customerDraft(FORM),
+      {code: 'CUSTOMER_RELEASE_REVIEW_REQUIRED'});
+    await assert.rejects(h.actions.checkCustomerSent(FORM),
+      {code: 'CUSTOMER_RELEASE_REVIEW_REQUIRED'});
+    assert.equal(h.receiptWrites(), 0);
+  });
+
 test('forged Sent row with an unsent Draft stays held', async () => {
   const h = fixture();
   h.setActor(OWNER);

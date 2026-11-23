@@ -42,7 +42,9 @@ function providerBindingMatches(preview, id) {
     /^[0-9a-f]{64}$/u.test(binding.protectedJoinSha256 ?? '') &&
     Array.isArray(preview.to) && preview.to.length <= 2 &&
     (preview.to.length > 0
-      ? preview.recipientEvidence === 'verified_pair'
+      ? preview.recipientEvidence === 'verified_pair' ||
+        (preview.recipientEvidence === 'suggested_pair' &&
+          preview.recipientReviewRequired === true)
       : preview.recipientEvidence === 'manual_entry' &&
         preview.recipientReviewRequired === true) &&
     Array.isArray(preview.cc) && preview.cc.length === 0 &&

@@ -266,8 +266,18 @@ async function inspectExistingDraft(message, evidence, claim, draftsFolderId,
     fail('DRAFT_IDENTITY_MISMATCH');
   }
   const reasons = [];
+  let suggestedRecipients = false;
+  if (claim.fields.ActionKind === 'provider-parts') {
+    try {
+      suggestedRecipients = JSON.parse(claim.fields.SourceETagsJson)
+        .recipientEvidence === 'suggested_pair';
+    } catch { fail('CLAIM_EVIDENCE_INVALID'); }
+  }
   let recipientReviewRequired = claim.fields.ActionKind === 'provider-parts' &&
-    evidence.to.length === 0;
+    (evidence.to.length === 0 || suggestedRecipients);
+  if (suggestedRecipients) {
+    reasons.push('Recipients are suggestions; verify in Outlook');
+  }
   try {
     const to = recipientsOf(message);
     const cc = recipientsOf(message, 'ccRecipients');
@@ -379,6 +389,57 @@ export class LeanGanttActions {
     return this._checkState(state, context);
   }
 
+  async _verifyCustomerExistingRelease(key, context, state) {
+    let source;
+    try {
+      source = await context.source.resolve(key, context.actor,
+        {allowOccupied: true});
+    } catch (error) {
+      if (error instanceof HeldActionError) throw error;
+      fail('CUSTOMER_RELEASE_READ_UNCERTAIN');
+    }
+    if (source?.formSourceKey !== key) fail('CUSTOMER_RELEASE_KEY_MISMATCH');
+    if (!Number.isSafeInteger(source.validUntilMs) ||
+        this.now() >= source.validUntilMs) {
+      fail('CUSTOMER_RELEASE_WINDOW_EXPIRED');
+    }
+    if (typeof source.trackerUrl !== 'string' ||
+        typeof source.recipientEmail !== 'string') {
+      fail('CUSTOMER_RELEASE_INCOMPLETE');
+    }
+    if (!state.draft) fail('CUSTOMER_DRAFT_RECEIPT_MISSING');
+    const evidence = intendedFromReceipt(state.draft, 'customer-tracker');
+    if (source.recipientEmail !== evidence.to[0] ||
+        await sha256(source.trackerUrl) !== evidence.customerLinkSha256 ||
+        (source.legacyDraftMessageId &&
+          source.legacyDraftMessageId !== evidence.id)) {
+      fail('CUSTOMER_RELEASE_CHANGED_AFTER_DRAFT');
+    }
+    return source;
+  }
+
+  async _existingCustomerAction(state, context, key, options = {}) {
+    if (state.claim.fields.DispatchKey !== customerDispatchKey(key) ||
+        state.claim.fields.EntityId !== key) {
+      fail('CUSTOMER_CLAIM_KEY_MISMATCH');
+    }
+    const result = await this._existingAction(state, context, options);
+    // Legacy owner recovery can return an Outlook link without going through
+    // _checkState. Recheck the current Release and public FORM binding before
+    // either button exposes any existing draft link. Sent-only results have no
+    // link and remain available for mailbox receipt reconciliation.
+    if (result?.webLink) {
+      const source = await this._verifyCustomerExistingRelease(key, context,
+        state);
+      if (source.legacyDraftWebLink &&
+          validatedOutlookLink(source.legacyDraftWebLink) !==
+            validatedOutlookLink(result.webLink)) {
+        fail('CUSTOMER_RELEASE_CHANGED_AFTER_DRAFT');
+      }
+    }
+    return result;
+  }
+
   /** Read-only click-time preview. Draft methods reread everything afterward. */
   async preview(kind, entityId) {
     if (kind !== 'provider' && kind !== 'customer') fail('ACTION_KIND_INVALID');
@@ -397,6 +458,9 @@ export class LeanGanttActions {
         'legacy_occupied' : state.claim.fields.ActorOid.toLowerCase() !==
         context.actor.id ? 'draft_status_unverified' : state.draft ?
           'draft_occupied' : 'claim_outcome_unverified');
+      if (kind === 'customer' && status === 'draft_occupied') {
+        await this._verifyCustomerExistingRelease(id, context, state);
+      }
       return {kind, id, dispatchKey, status,
         to: [], cc: [], recipientReviewRequired: false,
         webLink: null, reviewReason: sharedSentReview(
@@ -417,7 +481,8 @@ export class LeanGanttActions {
       agentCode: kind === 'provider' ? source.agentCode : null,
       thirstyOwner: kind === 'provider' ? source.thirstyOwner : null,
       to: [...draft.to], cc: [],
-      recipientReviewRequired: kind === 'provider' && draft.to.length === 0,
+      recipientReviewRequired: kind === 'provider' &&
+        source.recipientReviewRequired === true,
       validUntilUtc: new Date(source.validUntilMs).toISOString(),
       binding: kind === 'customer' ?
         await customerPreviewBinding(id, source) : null};
@@ -466,14 +531,18 @@ export class LeanGanttActions {
     const draftsId = await context.graph.getFolderId('drafts');
     const inspected = await verifyDraftMessage(message, evidence, claim,
       draftsId, this.domParserClass);
+    const recipientReviewRequired = inspected.recipientReviewRequired ||
+      source.recipientReviewRequired === true;
     const state = await context.store.appendDraft(claim, context.actor,
       {...content, id: created.id}, message);
     if (!state.draft || state.sent) fail('DRAFT_RECEIPT_READBACK_MISMATCH');
-    return {status: inspected.recipientReviewRequired ?
+    return {status: recipientReviewRequired ?
       'recipient_review_required' : 'draft',
       dispatchKey: key, webLink: inspected.webLink,
-      immutableId: created.id, recipientReviewRequired: inspected.recipientReviewRequired,
-      contentReviewRequired: false, reviewReason: ''};
+      immutableId: created.id, recipientReviewRequired,
+      contentReviewRequired: false,
+      reviewReason: source.recipientEvidence === 'suggested_pair'
+        ? 'Recipients are suggestions; verify in Outlook' : ''};
   }
 
   /** Manual Check Sent and return/focus share this attended observation. */
@@ -525,6 +594,7 @@ export class LeanGanttActions {
       fail('SENT_SCAN_NOT_SENT');
     }
     if (message.isDraft === true) {
+      if (state.sent) fail('DRAFT_AND_SENT_CONFLICT');
       let sourceReviewReason = '';
       if (actionKind === 'provider-parts') {
         try {
@@ -558,10 +628,12 @@ export class LeanGanttActions {
             `Customer release needs review: ${safeSourceErrorCode(error)}`;
         }
       }
+      if (actionKind === 'customer-tracker' && sourceReviewReason) {
+        fail('CUSTOMER_RELEASE_REVIEW_REQUIRED');
+      }
       const draftsId = await context.graph.getFolderId('drafts');
       const inspected = await inspectExistingDraft(message, evidence, state.claim,
         draftsId, this.domParserClass);
-      if (state.sent) fail('DRAFT_AND_SENT_CONFLICT');
       const reviewReason = [sourceReviewReason, inspected.reviewReason]
         .filter(Boolean).join('; ');
       return {status: sourceReviewReason ? 'source_changed_review_required' :
@@ -641,7 +713,7 @@ export class LeanGanttActions {
       if (expectedPreviewBinding != null) {
         fail('CUSTOMER_CLAIM_CHANGED_SINCE_PREVIEW');
       }
-      return this._existingAction(existing, context);
+      return this._existingCustomerAction(existing, context, key);
     }
     const pilot = await this._inspectLegacy(dispatchKey, context.graph);
     if (pilot.occupied) return occupiedForCaller(pilot.occupied);
@@ -698,7 +770,7 @@ export class LeanGanttActions {
     const context = await this._context('customer');
     const dispatchKey = customerDispatchKey(key);
     const state = await context.store.getState(dispatchKey);
-    if (state) return this._existingAction(state, context,
+    if (state) return this._existingCustomerAction(state, context, key,
       {checkSent: true});
     const fenced = await this._legacyFence(dispatchKey, context.graph);
     if (fenced) return occupiedForCaller(fenced);

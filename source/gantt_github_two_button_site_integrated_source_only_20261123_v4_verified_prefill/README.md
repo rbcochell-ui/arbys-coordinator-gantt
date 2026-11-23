@@ -18,7 +18,7 @@ are code-level endpoints, not deployment credentials.
 | --- | --- | --- |
 | Select exact WO or FORM project | Decrypted chart in an opaque, sandboxed iframe sends an allowlisted ID to the parent. | Selection never invokes a draft call. A changed, unknown, or reloaded selection clears eligibility. |
 | Sign in | MSAL delegated popup using the dedicated `auth/redirect.html` bridge. | No Graph request occurs during disabled startup. The exact redirect still needs registration and a live canary. |
-| Create or reopen provider parts draft | Snapshot provider V7 with its owner-approved Release, fresh protected WO Source and Verified Contacts reads, then Graph `POST /me/messages` for an **unsent** draft. | First draft requires one charted native WO with matching protected WO number, store, outlet ACN, agent, visit type and status. A current verified manager/planner pair is prefilled; absent or stale contacts leave To blank for coordinator review, while conflicting positive pairs hold. A verified shared mailbox is addressed once. Missing-store address fallback and relocation stay held. The route rereads before and after its unique Claim; an occupied key can only resume its existing draft. |
+| Create or reopen provider parts draft | Snapshot provider V7 with its owner-approved Release, fresh protected WO Source and Verified Contacts reads, then Graph `POST /me/messages` for an **unsent** draft. | First draft requires one charted native WO with matching protected WO number, store, outlet ACN, agent, visit type and status. A current verified manager/planner pair is prefilled. A current unverified pair may be prefilled as a clearly labeled suggestion that the coordinator must check in Outlook. Absent or stale contacts leave To blank; conflicting positive pairs hold. A shared mailbox is addressed once. Missing-store address fallback and relocation stay held. The route rereads before and after its unique Claim; an occupied key can only resume its existing draft. |
 | Create or reopen customer milestone draft | Sanitized lean Graph V3 customer Release and the same physical unique Claim/Receipt Lists. | A Ready Release must be owner-issued from the exact FORM key, reviewed `Primary_Contact.Email` candidate, and private tracker link. The email is a suggested To, not proof of who clicked Submit; Tony or Harmony must verify the customer in Outlook before Send. The shared Draft receipt stores only a SHA-256 marker for the private tracker link. The customer capability and Outlook draft link stay out of team-readable rows. |
 | Check Sent Items | Contextual attended provider V7 or customer V3 read of the original mailbox message. | A Sent receipt requires real Sent Items evidence. Returning to the signed-in Gantt checks an exact selected draft once; opening an owned occupied draft selection also checks once. The manual button remains available. Missing draft or uncertain status is held. |
 
@@ -27,8 +27,10 @@ coordinator reviews the editable Outlook draft's current Thirsty phase, parts
 need, assigned agent, work date, fountain scope, To/Cc, and six links before
 sending. A known filter-only, survey, line-run, or fire-up visit is held by
 the provider route. An uncertain fountain label receives a strong scope
-warning. Dated contact suggestions are labeled as such and never prefill To
-without a current verified protected pair; a conflicting positive pair holds.
+warning. Dated chart contacts alone never prefill To. A current protected
+unverified pair may prefill as a labeled suggestion only when the independent
+chart pair agrees; the coordinator must verify both contacts before Send. A
+conflicting positive pair holds.
 The panel identifies
 the Gantt snapshot as dated and provides the exact WO Thirsty link. It does
 not claim the chart is current. The single provider draft click is the only
@@ -85,10 +87,11 @@ Claim can occupy the provider key without allowing a second draft.
 
 The v4 site-local parent adapter and UI accept a blank provider To only when
 V7 says `manual_entry` and requires recipient review. They preserve the exact
-preview binding through the click. The dated chart may show contact suggestions,
-but those suggestions cannot populate the Outlook recipient field without a
-current verified protected contact pair. A separate site test covers both the
-blank-To draft path and its rejection when the review evidence is absent.
+preview binding through the click. Dated chart contacts alone cannot populate
+Outlook To. A fresh protected unverified pair can populate To as a labeled
+suggestion when the independent chart pair agrees, and V7 keeps recipient
+review required through the draft and reopen path. Separate site tests cover
+both this suggestion and the blank-To draft path.
 
 The composed provider route uses the same direct Graph WO Source and Verified
 Contacts reader as the reviewed V7 writer contract. The account is pinned on
@@ -100,6 +103,18 @@ absent. The code does not infer a native Case → FORM link from the WO Source
 row: that relationship is only in the owner-approved chart and needs separate
 source-owner review before release. The earlier full-cohort packet and daily
 approval proposal remains source-only and is not part of this route.
+
+## Customer link binding gate
+
+Before the customer button is enabled, each FORM project needs an owner-reviewed
+encrypted link proof beside its published status file. The customer resolver
+now rejects duplicate tracker handles across the Release List and verifies
+the currently served status bytes, decryption, freshness, and encrypted FORM
+binding before a first or existing Outlook customer draft link can open. An
+actual Sent Items message can still be checked without reopening its draft.
+The existing pilot has no proof file
+and remains held; the other 39 project links remain unissued. See
+[the source-only proof contract](../github_gantt_graph_actions_lean_source_only_20261122_v3/CUSTOMER_LINK_PROOF.md).
 
 ## Source layout and local verification
 
@@ -146,7 +161,7 @@ the smoke's temporary invented asset into a publication package.
 | Migration and privacy | Reconcile old pilot occupied keys and any V2 shared rows that stored raw Outlook links, subjects, free-text reasons, or customer capability URLs. Lean V3 and provider V7 reject incompatible legacy shapes; no automatic rewrite is included. |
 | Legacy fence | Inventory every historical draft/receipt source and old writer with complete page receipts, retire or check the old writers, issue a bounded P-256 signed proof in the restricted Release row, and verify each coordinator's delegated read plus pre/post Claim drift. A signed Off observation alone can go stale if a writer is restarted. |
 | Source and chart | Owner must approve a fresh exact ciphertext/decrypted HTML digest row. The deployed encrypted chart must carry reviewed allowlists covering intended eligible native WOs and FORM keys; the old pilot allowlist is too narrow for a team release. The published script hashes and selected chart version must be checked together. |
-| Protected provider source | The exact `Arbys Provider Parts WO Action Source` List needs a fresh, indexed unique native WO row for every eligible installation, with verified agent/store/outlet ACN and status. The Verified Contacts List needs a current manager/planner pair to prefill Outlook; absent or stale roles leave To blank for manual verification, and conflicting positive pairs hold. Read back List IDs, schemas, ACLs, selected grants, and source timestamps in the tenant. The currently reported one-row WO Source cannot activate every charted work order. A missing native WO store, address-only candidate, or unreviewed relocation stays held. Independently review the chart's Case → FORM linkage before release because the protected WO Source does not carry that edge. |
+| Protected provider source | The exact `Arbys Provider Parts WO Action Source` List needs a fresh, indexed unique native WO row for every eligible installation, with verified agent/store/outlet ACN and status. The Verified Contacts List needs a current manager/planner pair to prefill Outlook; a current unverified pair is labeled for coordinator review, while absent or stale roles leave To blank and conflicting positive pairs hold. Read back List IDs, schemas, ACLs, selected grants, and source timestamps in the tenant. The currently reported one-row WO Source cannot activate every charted work order. A missing native WO store, address-only candidate, or unreviewed relocation stays held. Independently review the chart's Case → FORM linkage before release because the protected WO Source does not carry that edge. |
 | Customer recipient | Before a Ready Release, owner review must pin the exact FORM key, `Primary_Contact.Email` source field, its suggested recipient value, the published private tracker link and release receipt. FORM Primary Contact does not establish who clicked Submit. The coordinator must verify the intended customer in the editable Outlook draft before Send. |
 | Browser policy | The inherited held CSP currently permits `connect-src 'self'` and `frame-src 'self' about:` only. Before live Graph/MSAL calls, review and test the minimal Microsoft Graph and Entra `connect-src`/`frame-src` allowlist for the actual tenant and token flow. The current CSP deliberately leaves live actions blocked even if a config Boolean is changed. |
 | Outlook and operations | Run delegated empty-To, two-role shared mailbox, six-link HTML/readback, immutable-ID, changed draft reopen, cross-user duplicate race, actual Sent Items, and missing-message canaries. A coordinator still checks current Thirsty and edits the Outlook draft before Send. |

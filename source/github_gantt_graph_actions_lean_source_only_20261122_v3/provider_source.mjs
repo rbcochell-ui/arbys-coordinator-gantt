@@ -155,7 +155,9 @@ export class ProviderSourceResolver {
         !/^[A-Z][A-Z0-9]{0,9}$/.test(w.AssignedAgentCode ?? '') ||
         !/^[0-9]{5,12}$/.test(w.WorkOrderNumber ?? '') ||
         !/^[0-9]+$/.test(w.OutletACN ?? '') ||
+        /^0+$/.test(w.OutletACN) ||
         !/^[0-9]+$/.test(w.StoreNumber ?? '') ||
+        /^0+$/.test(w.StoreNumber) ||
         typeof w.ServiceAddressKey !== 'string' || !w.ServiceAddressKey.trim()) {
       fail('WO_NOT_CURRENTLY_DRAFT_READY');
     }
@@ -167,6 +169,8 @@ export class ProviderSourceResolver {
     const nowMs = this.now();
     fresh(observed, nowMs, MAX_SOURCE_AGE_MS, 'WO_OBSERVATION_STALE');
     const normalize = value => value.replace(/^0+/, '') || '0';
+    const sameNumeric = (left, right) => typeof left === 'string' &&
+      /^[0-9]+$/.test(left) && normalize(left) === normalize(right);
     const contactKey = await sha256Hex(canonical([
       w.AssignedAgentCode, normalize(w.OutletACN), normalize(w.StoreNumber),
     ]));
@@ -175,30 +179,56 @@ export class ProviderSourceResolver {
     let to = [];
     let verified = null;
     let checked = null;
+    let recipientEvidence = 'manual_entry';
     if (contact) {
       const c = contact.fields;
+      // A present, contradictory row is not an invitation to use its emails
+      // or to create a blank-To draft. The unique key, location, and source
+      // digest must agree before either verified or suggested prefill.
+      if (c.ContactKey !== contactKey || c.AgentCode !== w.AssignedAgentCode ||
+          !sameNumeric(c.OutletACN, w.OutletACN) ||
+          !sameNumeric(c.StoreNumber, w.StoreNumber) ||
+          c.ServiceAddressKey !== w.ServiceAddressKey ||
+          !SHA.test(c.SourceEvidenceDigest ?? '') ||
+          typeof c.Verified !== 'boolean') fail('CONTACT_JOIN_CONFLICT');
+      let pair;
+      try { pair = [email(c.InstallManagerEmail), email(c.PlannerEmail)]; }
+      catch { fail('CONTACT_PAIR_INVALID'); }
+      // Both roles may use one shared inbox. Preserve two-role evidence and
+      // address that mailbox only once.
+      const audience = [...new Set(pair)];
+      if (c.Verified === false && c.VerifiedAtUtc != null &&
+          c.VerifiedAtUtc !== '') fail('CONTACT_REVIEW_STATE_CONFLICT');
       try {
-        if (c.ContactKey !== contactKey || c.AgentCode !== w.AssignedAgentCode ||
-            c.OutletACN !== w.OutletACN || c.StoreNumber !== w.StoreNumber ||
-            (c.ServiceAddressKey ?? '') !== (w.ServiceAddressKey ?? '') ||
-            c.Verified !== true || !SHA.test(c.SourceEvidenceDigest ?? '')) {
-          throw new Error('Contact join or review not verified');
-        }
-        const pair = [email(c.InstallManagerEmail), email(c.PlannerEmail)];
-        const reviewedAt = timestamp(c.VerifiedAtUtc, 'CONTACT_VERIFICATION_INVALID');
         const sourceCheckedAt = timestamp(c.SourceCheckedAtUtc,
           'CONTACT_SOURCE_CHECK_INVALID');
-        if (sourceCheckedAt < reviewedAt) throw new Error('Contact timing invalid');
-        fresh(reviewedAt, nowMs, MAX_CONTACT_REVIEW_AGE_MS,
-          'CONTACT_VERIFICATION_STALE');
-        fresh(sourceCheckedAt, nowMs, MAX_CONTACT_CHECK_AGE_MS,
-          'CONTACT_SOURCE_CHECK_STALE');
-        // Both reviewed roles may use one shared inbox. Preserve the two-role
-        // verification while addressing that mailbox only once.
-        to = [...new Set(pair)];
-        verified = reviewedAt;
-        checked = sourceCheckedAt;
-      } catch { /* The coordinator must review recipients in Outlook. */ }
+        if (c.Verified === true) {
+          const reviewedAt = timestamp(c.VerifiedAtUtc,
+            'CONTACT_VERIFICATION_INVALID');
+          if (sourceCheckedAt < reviewedAt) fail('CONTACT_REVIEW_STATE_CONFLICT');
+          fresh(reviewedAt, nowMs, MAX_CONTACT_REVIEW_AGE_MS,
+            'CONTACT_VERIFICATION_STALE');
+          fresh(sourceCheckedAt, nowMs, MAX_CONTACT_CHECK_AGE_MS,
+            'CONTACT_SOURCE_CHECK_STALE');
+          to = audience;
+          verified = reviewedAt;
+          checked = sourceCheckedAt;
+          recipientEvidence = 'verified_pair';
+        } else {
+          // Workbook-corroborated contacts may be suggested for one day after
+          // a protected source check. The coordinator verifies them in Outlook
+          // before Send; the draft is never sent by this route.
+          fresh(sourceCheckedAt, nowMs, MAX_SOURCE_AGE_MS,
+            'CONTACT_SUGGESTION_STALE');
+          to = audience;
+          checked = sourceCheckedAt;
+          recipientEvidence = 'suggested_pair';
+        }
+      } catch (error) {
+        if (error?.code === 'CONTACT_REVIEW_STATE_CONFLICT') throw error;
+        // Missing or stale review data cannot prefill; blank To remains the
+        // guarded manual-entry route when its canary is enabled.
+      }
     }
     if (to.length === 0 && this.config.emptyToDraftCanaryPassed !== true) {
       fail('RECIPIENT_REVIEW_DRAFT_NOT_CANARIED');
@@ -207,12 +237,15 @@ export class ProviderSourceResolver {
     const validUntilMs = Math.min(nowMs + MAX_READ_WINDOW_MS,
       observed + MAX_SOURCE_AGE_MS,
       ...(verified === null ? [] : [verified + MAX_CONTACT_REVIEW_AGE_MS]),
-      ...(checked === null ? [] : [checked + MAX_CONTACT_CHECK_AGE_MS]));
+      ...(checked === null ? [] : [checked +
+        (recipientEvidence === 'suggested_pair' ? MAX_SOURCE_AGE_MS :
+          MAX_CONTACT_CHECK_AGE_MS)]));
     if (validUntilMs <= nowMs) fail('SOURCE_WINDOW_EXPIRED');
     const etags = Object.freeze({
       wo: {itemId: wo.id, etag: wo.etag},
       contact: contact ? {itemId: contact.id, etag: contact.etag} :
         {state: 'absent', lookupKey: contactKey},
+      recipientEvidence,
     });
     const digest = await sha256Hex(canonical({wo, contact, contactKey}));
     return Object.freeze({nativeWoId: id, woNumber: w.WorkOrderNumber,
@@ -222,8 +255,10 @@ export class ProviderSourceResolver {
       serviceTypeCode: w.ServiceTypeCode,
       workOrderStatus: w.WorkOrderStatus,
       thirstyOwner: w.ThirstyOwnerFullName || null,
-      agentCode: w.AssignedAgentCode, to: Object.freeze(to),
-      recipientReviewRequired: to.length === 0, digest,
+      agentCode: w.AssignedAgentCode,
+      serviceAddressKey: w.ServiceAddressKey,
+      to: Object.freeze(to), recipientEvidence,
+      recipientReviewRequired: recipientEvidence !== 'verified_pair', digest,
       sharedMailboxVerified: to.length === 1 && verified !== null,
       etagsJson: canonical(etags), observedAtUtc: w.SourceObservedAtUtc,
       validUntilMs});

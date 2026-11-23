@@ -191,6 +191,10 @@ export class ClaimReceiptStore {
         !GUID.test(f.ActorOid ?? '') || email(f.ActorEmail) !== f.ActorEmail ||
         !GUID.test(f.AttemptId ?? '') || !GUID.test(f.CorrelationId ?? '') ||
         !SHA.test(f.SourceDigest ?? '') ||
+        (action.kind === 'provider-parts' &&
+          etags?.recipientEvidence !== undefined &&
+          !['verified_pair', 'suggested_pair', 'manual_entry']
+            .includes(etags.recipientEvidence)) ||
         !(action.kind === 'provider-parts'
           ? (/^[1-9][0-9]*$/.test(String(etags?.wo?.itemId ?? '')) &&
             typeof etags?.wo?.etag === 'string' && etags.wo.etag &&

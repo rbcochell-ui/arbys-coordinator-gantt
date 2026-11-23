@@ -203,6 +203,32 @@ test('provider click carries the binding for the displayed verified pair', async
   h.ui.dispose();
 });
 
+test('suggested provider pair is prefilled and visibly requires Outlook review', async () => {
+  const h = harness({previewRecipientEvidence: 'suggested_pair',
+    previewRecipientReviewRequired: true});
+  h.select('provider', WO);
+  await h.signIn();
+  await until(() => h.controls.providerDraftAction.disabled === false);
+  assert.equal(h.controls.toReview.value,
+    'manager@example.invalid; planner@example.invalid');
+  assert.match(h.controls.actionStatus.textContent,
+    /Suggested recipients need verification in Outlook before Send/);
+  await h.controls.providerDraftAction.click();
+  assert.equal(h.calls.filter(call => call[0] === 'providerDraft').length, 1);
+  h.ui.dispose();
+});
+
+test('suggested provider pair without the review flag remains held', async () => {
+  const h = harness({previewRecipientEvidence: 'suggested_pair',
+    previewRecipientReviewRequired: false});
+  h.select('provider', WO);
+  await h.signIn();
+  await until(() => /PROVIDER_PREVIEW_BINDING_INVALID/u.test(
+    h.controls.actionStatus.textContent));
+  assert.equal(h.controls.providerDraftAction.disabled, true);
+  h.ui.dispose();
+});
+
 test('provider click holds if the displayed To changed after preview', async () => {
   const h = harness();
   h.select('provider', WO);

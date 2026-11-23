@@ -9,6 +9,7 @@ import {createDerivedLegacyProofReader} from '../legacy_migration_proof.mjs';
 import {createLegacySentGraphPort} from '../legacy_sent_graph_port.mjs';
 import {sentPlanDigest} from '../legacy_sent_attempt_contract.mjs';
 import {LeanGanttActions} from '../actions.mjs';
+import {HeldActionError} from '../contract.mjs';
 import {GraphHttpError} from '../graph.mjs';
 import {SnapshotProviderActionWriter} from
   '../../gantt_github_snapshot_first_provider_flow_source_only_20261123_v7_verified_prefill/snapshot_provider_writer.mjs';
@@ -149,7 +150,7 @@ function makeFixture(kind = 'provider-parts') {
     immutableMessageId: id, planSha256: 'e'.repeat(64),
     fingerprint: 'f'.repeat(64)};
   const calls = {requests: [], oldReads: 0, stateReads: 0, fenceReads: 0,
-    proofReads: 0};
+    proofReads: 0, sourceReads: 0};
   const graph = {
     bindAccount() { return this; },
     async getMe() { return clone(actor); },
@@ -785,11 +786,23 @@ function recoveryFor(f) {
     now: () => Date.parse('2026-11-23T12:00:00Z')});
 }
 
-function leanFor(f, recovery) {
+function leanFor(f, recovery, source = {async resolve(key) {
+  // This test double represents a current, independently verified release.
+  // The real encrypted proof and public-byte checks have separate tests.
+  f.calls.sourceReads++;
+  assert.equal(key, f.key.slice('customer-tracker:'.length));
+  return {formSourceKey: key,
+    trackerUrl: f.oldFields.CustomerTrackingUrl,
+    recipientEmail: f.oldFields.RecipientEmail,
+    legacyDraftMessageId: f.id,
+    legacyDraftWebLink: f.webLink,
+    validUntilMs: Date.parse('2026-11-23T12:30:00Z')};
+}}) {
   const actions = new LeanGanttActions({config: {}, graph: f.graph,
-    legacyOwnerRecovery: recovery});
+    legacyOwnerRecovery: recovery,
+    now: () => Date.parse('2026-11-23T12:00:00Z')});
   actions._context = async () => ({graph: f.graph, actor,
-    store: {getState: async () => clone(f.state)}});
+    store: {getState: async () => clone(f.state)}, source});
   return actions;
 }
 
@@ -803,8 +816,90 @@ test('integrated customer owner preview and click reopen the same old draft', as
   assert.equal(result.status, 'legacy_draft_review_required');
   assert.equal(result.webLink, f.webLink);
   assert.equal(result.sendReady, false);
+  assert.equal(f.calls.sourceReads, 2);
   assert.ok(f.calls.requests.every(call => call.method === 'GET'));
 });
+
+test('legacy customer draft and Check Sent expose no link without FORM proof',
+  async () => {
+    const f = makeFixture('customer-tracker');
+    const source = {async resolve() {
+      throw new HeldActionError('RELEASE_TRACKER_PROOF_UNAVAILABLE');
+    }};
+    const actions = leanFor(f, recoveryFor(f), source);
+    const formKey = f.key.slice('customer-tracker:'.length);
+    await assert.rejects(() => actions.preview('customer', formKey),
+      {code: 'RELEASE_TRACKER_PROOF_UNAVAILABLE'});
+    await assert.rejects(() => actions.customerDraft(formKey),
+      {code: 'RELEASE_TRACKER_PROOF_UNAVAILABLE'});
+    await assert.rejects(() => actions.checkCustomerSent(formKey),
+      {code: 'RELEASE_TRACKER_PROOF_UNAVAILABLE'});
+    assert.ok(f.calls.requests.every(call => call.method === 'GET'));
+  });
+
+test('legacy customer Check Sent records an actual Sent item without a current link proof',
+  async () => {
+    const f = makeFixture('customer-tracker');
+    moveToSent(f);
+    let receiptPosts = 0;
+    const recovery = new LegacyOwnerRecovery({adapter: f.adapter,
+      now: () => Date.parse('2026-11-23T12:00:00Z'),
+      postSentReceipt: async (fields, _refs, beforeFetch) => {
+        receiptPosts++;
+        beforeFetch();
+        if (fields.Kind === 'SentAttempt') {
+          saveAttempt(f, fields);
+          return {status: 201, data: {id: '43'}};
+        }
+        saveSent(f, fields);
+        return {status: 201, data: {id: '44'}};
+      }});
+    const source = {async resolve() {
+      throw new HeldActionError('RELEASE_TRACKER_PROOF_UNAVAILABLE');
+    }};
+    const actions = leanFor(f, recovery, source);
+    const formKey = f.key.slice('customer-tracker:'.length);
+    const result = await actions.checkCustomerSent(formKey);
+    assert.equal(result.status, 'sent');
+    assert.equal(result.webLink, null);
+    assert.equal(receiptPosts, 2);
+  });
+
+test('legacy customer preview and reopen hold when proof expires during read',
+  async () => {
+    const f = makeFixture('customer-tracker');
+    const source = {async resolve(key) {
+      return {formSourceKey: key,
+        trackerUrl: f.oldFields.CustomerTrackingUrl,
+        recipientEmail: f.oldFields.RecipientEmail,
+        validUntilMs: Date.parse('2026-11-23T12:00:01Z')};
+    }};
+    const actions = leanFor(f, recoveryFor(f), source);
+    actions.now = () => Date.parse('2026-11-23T12:00:02Z');
+    const formKey = f.key.slice('customer-tracker:'.length);
+    await assert.rejects(() => actions.preview('customer', formKey),
+      {code: 'CUSTOMER_RELEASE_WINDOW_EXPIRED'});
+    await assert.rejects(() => actions.customerDraft(formKey),
+      {code: 'CUSTOMER_RELEASE_WINDOW_EXPIRED'});
+  });
+
+test('legacy customer draft cannot reopen after its Release points to another tracker',
+  async () => {
+    const f = makeFixture('customer-tracker');
+    const source = {async resolve(key) {
+      return {formSourceKey: key,
+        trackerUrl: f.oldFields.CustomerTrackingUrl.replace(
+          'A'.repeat(43), 'B'.repeat(43)),
+        recipientEmail: f.oldFields.RecipientEmail,
+        validUntilMs: Date.parse('2026-11-23T12:30:00Z')};
+    }};
+    const actions = leanFor(f, recoveryFor(f), source);
+    const formKey = f.key.slice('customer-tracker:'.length);
+    await assert.rejects(() => actions.preview('customer', formKey),
+      {code: 'CUSTOMER_RELEASE_CHANGED_AFTER_DRAFT'});
+    await assert.rejects(() => actions.customerDraft(formKey),
+      {code: 'CUSTOMER_RELEASE_CHANGED_AFTER_DRAFT'});
+  });
 
 test('integrated provider owner uses snapshot writer without a new draft', async () => {
   const f = makeFixture();

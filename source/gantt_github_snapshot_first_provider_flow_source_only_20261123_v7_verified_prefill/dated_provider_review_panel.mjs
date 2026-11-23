@@ -40,6 +40,13 @@ function recipientCopy(preview) {
       ? 'One current verified protected mailbox covers both provider contact roles and will be prefilled in Outlook. Verify it before Send.'
       : 'The current verified protected installation manager and planner will be prefilled in Outlook. Verify both before Send.';
   }
+  if (preview.recipientEvidence === 'suggested_pair' &&
+      preview.recipientReviewRequired === true &&
+      Array.isArray(preview.to) && preview.to.length > 0) {
+    return preview.to.length === 1
+      ? 'One recently checked protected mailbox is suggested for both roles and will be prefilled in Outlook. Current role holders are not verified. Confirm the mailbox before Send.'
+      : 'Recently checked protected installation manager and planner suggestions will be prefilled in Outlook. Current role holders are not verified. Confirm both before Send.';
+  }
   if (preview.recipientEvidence === 'manual_entry' &&
       preview.recipientSuggestion === 'exact_saved_file_pair' &&
       Array.isArray(preview.to) && preview.to.length === 0 &&

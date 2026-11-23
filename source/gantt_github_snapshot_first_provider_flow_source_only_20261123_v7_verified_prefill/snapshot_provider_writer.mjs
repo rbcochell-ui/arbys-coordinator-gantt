@@ -159,12 +159,16 @@ function sourceForClaim(command) {
       !SHA.test(protectedBinding[0] ?? '') ||
       typeof protectedBinding[1] !== 'string' ||
       typeof protectedBinding[2] !== 'string' ||
-      !['verified_pair', 'manual_entry'].includes(command.recipientEvidence) ||
+      !['verified_pair', 'suggested_pair', 'manual_entry']
+        .includes(command.recipientEvidence) ||
       protectedBinding[3] !== command.recipientEvidence ||
       JSON.stringify(validTo(protectedBinding[4])) !== JSON.stringify(to) ||
       JSON.stringify(validTo(protectedBinding[5])) !==
         JSON.stringify(datedSuggestionTo) ||
       (command.recipientEvidence === 'manual_entry') !== (to.length === 0) ||
+      (command.recipientEvidence === 'suggested_pair' &&
+        (command.recipientSuggestion !== 'exact_saved_file_pair' ||
+          to.length === 0)) ||
       (to.length > 0 && datedSuggestionTo.length > 0 &&
         JSON.stringify(to) !== JSON.stringify(datedSuggestionTo))) {
     fail('SNAPSHOT_DRAFT_COMMAND_INVALID');
@@ -507,9 +511,10 @@ export class SnapshotProviderActionWriter {
       const reasons = [];
       const origin = state.snapshotEvidence?.snapshot?.recipientEvidence;
       let recipientReviewRequired = evidence.to.length === 0 ||
-        origin === 'dated_pair' || origin === 'manual_entry';
-      if (origin === 'dated_pair') {
-        reasons.push('Recipients are dated suggestions; verify in Outlook');
+        origin === 'suggested_pair' || origin === 'dated_pair' ||
+        origin === 'manual_entry';
+      if (origin === 'suggested_pair' || origin === 'dated_pair') {
+        reasons.push('Recipients are suggestions; verify in Outlook');
       } else if (origin === 'manual_entry') {
         reasons.push('Recipients need manual entry in Outlook');
       }

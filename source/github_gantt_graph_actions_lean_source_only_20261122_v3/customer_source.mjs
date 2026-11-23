@@ -1,6 +1,8 @@
 import {canonicalCustomerBody, canonicalFormSourceKey, email, GRAPH_SCOPES,
   HeldActionError, MAX_READ_WINDOW_MS, SITE_URL,
   validatedCustomerTrackerUrl} from './contract.mjs';
+import {customerTrackerHandle, verifyPublishedCustomerBinding} from
+  './customer_link_binding.mjs';
 
 const TITLE = 'Arbys Customer Draft Releases';
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -69,13 +71,15 @@ function selected(item) {
 const empty = value => value === null || value === '' || value === undefined;
 
 export class CustomerReleaseResolver {
-  constructor({graph, config, now = () => Date.now()}) {
+  constructor({graph, config, now = () => Date.now(),
+    fetchImpl = globalThis.fetch}) {
     if (typeof graph?.request !== 'function' || typeof graph?.getMe !== 'function') {
       throw new TypeError('Delegated Graph is required');
     }
     this.graph = graph;
     this.config = config;
     this.now = now;
+    this.fetchImpl = fetchImpl;
     this.base = `/v1.0/sites/${encodeURIComponent(config.siteId)}/lists/${config.lists.customerReleases}`;
   }
 
@@ -130,6 +134,47 @@ export class CustomerReleaseResolver {
     return again;
   }
 
+  async _assertUniqueTracker(row, trackerUrl) {
+    // The 40-project first issue fits in one bounded inventory. A next page
+    // or an unreadable row is not evidence that this handle is unique.
+    const query = new URLSearchParams({
+      '$select': 'id',
+      '$expand': 'fields(select=FormSourceKey,CustomerTrackingUrl)',
+      '$top': '200',
+    });
+    const inventory = await this._get(this.base + '/items?' + query);
+    if (!Array.isArray(inventory.value) || inventory.value.length > 200 ||
+        inventory['@odata.nextLink']) fail('RELEASE_TRACKER_INVENTORY_INCOMPLETE');
+    const targetHandle = customerTrackerHandle(trackerUrl);
+    const handles = new Set();
+    let selectedSeen = false;
+    for (const item of inventory.value) {
+      const fields = item?.fields;
+      const value = fields?.CustomerTrackingUrl;
+      if (!/^[1-9][0-9]*$/.test(String(item?.id ?? '')) ||
+          !object(fields) || (value !== null && value !== '' &&
+          value !== undefined &&
+          typeof value !== 'string')) {
+        fail('RELEASE_TRACKER_INVENTORY_INVALID');
+      }
+      if (value === null || value === '' || value === undefined) continue;
+      let handle;
+      try {
+        canonicalFormSourceKey(fields.FormSourceKey);
+        handle = customerTrackerHandle(value);
+      } catch { fail('RELEASE_TRACKER_INVENTORY_INVALID'); }
+      if (handles.has(handle)) fail('RELEASE_TRACKER_HANDLE_REUSED');
+      handles.add(handle);
+      if (handle === targetHandle) {
+        if (String(item.id) !== row.id ||
+            fields.FormSourceKey !== row.fields.FormSourceKey ||
+            value !== trackerUrl) fail('RELEASE_TRACKER_HANDLE_REUSED');
+        selectedSeen = true;
+      }
+    }
+    if (!selectedSeen) fail('RELEASE_TRACKER_INVENTORY_INCOMPLETE');
+  }
+
   async resolve(formSourceKey, actor, {allowOccupied = false} = {}) {
     const key = canonicalFormSourceKey(formSourceKey);
     const started = this.now();
@@ -174,9 +219,15 @@ export class CustomerReleaseResolver {
         readyUntil <= nowMs || readyUntil > issued + DAY) {
       fail('RELEASE_SOURCE_OR_PAGE_REVIEW_STALE');
     }
+    await this._assertUniqueTracker(row, trackerUrl);
+    const page = await verifyPublishedCustomerBinding({
+      formSourceKey: key, trackerUrl,
+      ciphertextSha256: f.CiphertextSha256, nowMs: this.now(),
+      fetchImpl: this.fetchImpl,
+    });
     if (this.now() - started > 2 * 60_000) fail('RELEASE_READ_TOO_SLOW');
     const validUntilMs = Math.min(nowMs + MAX_READ_WINDOW_MS,
-      readyUntil, issued + DAY);
+      readyUntil, issued + DAY, page.validUntilMs);
     if (validUntilMs <= nowMs) fail('RELEASE_WINDOW_EXPIRED');
     return Object.freeze({formSourceKey: key, entityId: key,
       recipientEmail: f.RecipientEmail, trackerUrl,

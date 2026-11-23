@@ -40,3 +40,22 @@ test('one shared mailbox is accepted only after both protected roles verify', ()
   assert.deepEqual(draft.to, ['shared@example.invalid']);
   assert.equal(draft.requiredLinks.length, 6);
 });
+
+test('one fresh suggested shared mailbox is editable and requires review', () => {
+  const source = {woNumber: '900001', agentCode: 'A1',
+    to: ['shared@example.invalid'], recipientEvidence: 'suggested_pair',
+    sharedMailboxVerified: false, recipientReviewRequired: true};
+  const draft = buildProviderDraft(source);
+  assert.deepEqual(draft.to, ['shared@example.invalid']);
+  assert.equal(draft.requiredLinks.length, 6);
+  assert.equal(draft.htmlBody, buildProviderDraft({...source,
+    to: ['manager@example.invalid', 'planner@example.invalid']}).htmlBody);
+  for (const changed of [
+    {recipientReviewRequired: false},
+    {recipientEvidence: 'manual_entry'},
+    {sharedMailboxVerified: true},
+  ]) {
+    assert.throws(() => buildProviderDraft({...source, ...changed}),
+      {code: 'PROVIDER_DRAFT_SOURCE_INVALID'});
+  }
+});

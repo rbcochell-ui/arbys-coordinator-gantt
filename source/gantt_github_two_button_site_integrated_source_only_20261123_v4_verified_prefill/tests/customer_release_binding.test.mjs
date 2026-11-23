@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import test from 'node:test';
 import {LeanGanttActions} from '../../github_gantt_graph_actions_lean_source_only_20261122_v3/actions.mjs';
-import {canonicalCustomerBody, HeldActionError} from
+import {canonicalCustomerBody, customerDispatchKey, HeldActionError} from
   '../../github_gantt_graph_actions_lean_source_only_20261122_v3/contract.mjs';
 import {createV2ParentAdapter} from
   '../src/snapshot_parent_adapter_v4.mjs';
@@ -110,8 +110,17 @@ test('a Claim appearing after eligible preview holds before reopening', async ()
 test('an occupied preview cannot become a new draft if its Claim disappears', async () => {
   const f = fixture();
   f.setExisting({claim: {fields: {MigratedFrom: null,
-    ActorOid: '11111111-1111-4111-8111-111111111111'}},
-  draft: {id: 'invented-existing-draft'}, sent: null});
+    ActionKind: 'customer-tracker', EntityId: FORM,
+    DispatchKey: customerDispatchKey(FORM),
+    ActorOid: '11111111-1111-4111-8111-111111111111',
+    ActorEmail: 'coordinator@example.invalid'}},
+  draft: {fields: {
+    IntendedToJson: JSON.stringify([recipientA]),
+    RequiredLinksJson: JSON.stringify(['sha256:' + sha(trackerA)]),
+    IntendedBodySha256: sha(canonicalCustomerBody(trackerA)),
+    IntendedSubject: 'Invented tracker update',
+    DraftImmutableId: 'invented-existing-draft',
+  }}, sent: null});
   const preview = await f.actions.preview('customer', FORM);
   assert.equal(preview.status, 'draft_occupied');
   assert.equal(preview.binding, undefined);

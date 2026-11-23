@@ -274,17 +274,28 @@ function serviceTypeCode(value) {
     /^([A-Z0-9]{1,3})(?:\s*-\s*|$)/iu.exec(value)?.[1]?.toUpperCase() ?? null :
     null;
 }
+function serviceAddressKey(value) {
+  if (!object(value)) return null;
+  const part = text => typeof text === 'string' ?
+    text.trim().toUpperCase().replace(/\s+/gu, ' ') : '';
+  const zip = /^([0-9]{5})(?:-[0-9]{4})?$/u.exec(
+    String(value.zip ?? '').trim())?.[1] ?? '';
+  const parts = [part(value.street), part(value.city), part(value.state), zip];
+  return parts.every(Boolean) ? parts.join('|') : null;
+}
 function exactJoinReceipt(result, c, pair, nowMs) {
   const wo = c.facts.wo;
   const overlayWo = c.facts.overlay.rows?.[c.source.id];
   const chartAcn = numericIdentity(wo.acn);
   const chartStore = numericIdentity(wo.woStore);
   const chartServiceCode = serviceTypeCode(wo.serviceType);
+  const chartAddressKey = serviceAddressKey(wo.thirstyServiceAddress);
   const protectedAcn = numericIdentity(result?.outletAcn);
   const protectedStore = numericIdentity(result?.storeNumber);
   if (!object(result) || result.nativeWoId !== c.source.id ||
       !chartAcn || !chartStore || chartAcn !== protectedAcn ||
       chartStore !== protectedStore ||
+      !chartAddressKey || result.serviceAddressKey !== chartAddressKey ||
       c.source.visitKind !== 'Installation' ||
       result.normalizedVisitKind !== 'Install' ||
       result.workOrderType !== wo.type ||
@@ -300,7 +311,15 @@ function exactJoinReceipt(result, c, pair, nowMs) {
       !Array.isArray(result.to) || result.to.length > 2 ||
       result.to.some(address => roleEmail(address) !== address) ||
       new Set(result.to).size !== result.to.length ||
-      result.recipientReviewRequired !== (result.to.length === 0) ||
+      !['verified_pair', 'suggested_pair', 'manual_entry']
+        .includes(result.recipientEvidence) ||
+      (result.recipientEvidence === 'manual_entry') !==
+        (result.to.length === 0) ||
+      result.recipientReviewRequired !==
+        (result.recipientEvidence !== 'verified_pair') ||
+      (result.recipientEvidence === 'suggested_pair' &&
+        (pair.to.length === 0 ||
+          JSON.stringify(result.to) !== JSON.stringify(pair.to))) ||
       (result.to.length > 0 && pair.to.length > 0 &&
         JSON.stringify(result.to) !== JSON.stringify(pair.to)) ||
       !SHA.test(result.digest ?? '') ||
@@ -336,11 +355,10 @@ function exactJoinReceipt(result, c, pair, nowMs) {
   if (protectedObserved + 60_000 < chartObserved) {
     fail('PROTECTED_WO_OLDER_THAN_CHART');
   }
-  // Only a current verified protected Contacts pair may prefill Outlook.
-  // Chart addresses remain dated suggestions in the Gantt when the separate
-  // protected Contacts row is absent or unverified.
+  // Suggested prefill requires a fresh protected Contacts row and an exactly
+  // agreeing dated chart pair. It remains visibly unverified before Send.
   const to = Object.freeze([...result.to]);
-  const recipientEvidence = to.length ? 'verified_pair' : 'manual_entry';
+  const recipientEvidence = result.recipientEvidence;
   return Object.freeze({binding: JSON.stringify([result.digest,
     result.etagsJson, result.observedAtUtc, recipientEvidence,
     to, pair.to]),
@@ -535,6 +553,7 @@ export function createSnapshotFirstProviderFlow({enabled = false,
         recipientSuggestion: joinEvidence ?
           c.source.recipientSuggestion : 'none',
         recipientEvidence: joinEvidence?.recipientEvidence ?? null,
+        recipientReviewRequired: joinEvidence?.recipientEvidence !== 'verified_pair',
         to: joinEvidence?.to ?? Object.freeze([]),
         datedManagerEmail: datedPair?.manager ?? null,
         datedPlannerEmail: datedPair?.planner ?? null,

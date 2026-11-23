@@ -129,6 +129,20 @@ test('verified protected recipients are described as Outlook prefill even withou
   assert.doesNotMatch(e.recipientWarning.textContent, /Dated Gantt suggestion/);
 });
 
+test('unverified protected pair is visibly flagged before the coordinator sends', async () => {
+  const e = elements();
+  const panel = createDatedProviderReviewPanel({elements: e,
+    loadSnapshotPreview: async id => preview(id, {
+      recipientEvidence: 'suggested_pair', recipientReviewRequired: true})});
+  panel.onSignedIn();
+  panel.onSelection({kind: 'provider', id: WO});
+  await flush();
+  assert.match(e.recipientWarning.textContent, /prefilled in Outlook/);
+  assert.match(e.recipientWarning.textContent, /not verified/);
+  assert.match(e.recipientWarning.textContent, /Confirm both before Send/);
+  assert.doesNotMatch(e.recipientWarning.textContent, /To will be blank/);
+});
+
 test('A-B-A pending preview cannot revive an old selection or its Thirsty link', async () => {
   const e = elements();
   const pending = [];

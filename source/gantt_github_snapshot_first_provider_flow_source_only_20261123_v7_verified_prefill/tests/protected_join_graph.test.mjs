@@ -132,15 +132,66 @@ test('protected reader exposes an allowlisted alternate scope for chart comparis
   assert.equal(result.serviceTypeCode, '9');
 });
 
-test('an ACN mismatch in the protected contact row withholds recipients', async () => {
+test('a contradictory protected ACN holds the action', async () => {
   const rows = fixture();
   rows.contact.fields.OutletACN = '99999999';
   const {graph} = graphFor(rows);
   const resolver = new ProviderSourceResolver({graph, config: config(),
     now: () => NOW});
-  const result = await resolver.resolve(WO, ACTOR);
-  assert.deepEqual(result.to, []);
+  await assert.rejects(() => resolver.resolve(WO, ACTOR),
+    {code: 'CONTACT_JOIN_CONFLICT'});
+});
+
+test('zero-only protected ACN or store cannot become a shared contact key', async () => {
+  for (const name of ['OutletACN', 'StoreNumber']) {
+    const rows = fixture();
+    rows.wo.fields[name] = '000000';
+    const {graph} = graphFor(rows);
+    await assert.rejects(() => new ProviderSourceResolver({graph,
+      config: config(), now: () => NOW}).resolve(WO, ACTOR),
+    {code: 'WO_NOT_CURRENTLY_DRAFT_READY'});
+  }
+});
+
+test('a fresh unverified protected pair is suggested with required review', async () => {
+  const rows = fixture();
+  rows.contact.fields.Verified = false;
+  rows.contact.fields.VerifiedAtUtc = null;
+  const {graph} = graphFor(rows);
+  const result = await new ProviderSourceResolver({graph, config: config(),
+    now: () => NOW}).resolve(WO, ACTOR);
+  assert.deepEqual(result.to,
+    ['manager@example.invalid', 'planner@example.invalid']);
+  assert.equal(result.recipientEvidence, 'suggested_pair');
   assert.equal(result.recipientReviewRequired, true);
+  assert.equal(result.serviceAddressKey,
+    '1 EXAMPLE ROAD|TESTVILLE|NY|10001');
+});
+
+test('leading zero differences preserve the same protected numeric location', async () => {
+  const rows = fixture();
+  rows.contact.fields.OutletACN = '123456';
+  rows.contact.fields.StoreNumber = '01001';
+  rows.contact.fields.Verified = false;
+  rows.contact.fields.VerifiedAtUtc = null;
+  const {graph} = graphFor(rows);
+  const result = await new ProviderSourceResolver({graph, config: config(),
+    now: () => NOW}).resolve(WO, ACTOR);
+  assert.equal(result.recipientEvidence, 'suggested_pair');
+  assert.deepEqual(result.to,
+    ['manager@example.invalid', 'planner@example.invalid']);
+});
+
+test('a stale unverified pair cannot prefill', async () => {
+  const rows = fixture();
+  rows.contact.fields.Verified = false;
+  rows.contact.fields.VerifiedAtUtc = null;
+  rows.contact.fields.SourceCheckedAtUtc = '2026-11-21T18:00:00Z';
+  const {graph} = graphFor(rows);
+  const result = await new ProviderSourceResolver({graph, config: config(),
+    now: () => NOW}).resolve(WO, ACTOR);
+  assert.deepEqual(result.to, []);
+  assert.equal(result.recipientEvidence, 'manual_entry');
 });
 
 test('two verified roles sharing one mailbox yield one recipient', async () => {
