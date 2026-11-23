@@ -1,7 +1,22 @@
 # Arby's coordinator timeline
 
-This repository hosts an encrypted, dated Arby's coordinator timeline. The viewer requires its complete private link, including the fragment key. Repository files contain generic viewer code and encrypted chart data; the plaintext chart and key are not committed.
+This repository serves the encrypted Arby's coordinator Gantt. A complete private link, including its fragment key, is required to view the chart. The plaintext chart and its key are not committed. The existing encrypted `data/gantt.enc.json` is unchanged in this candidate.
 
-The chart is read-only. Its provider and customer selection controls identify the work order or FORM project, but Outlook draft creation remains disabled while company sign-in, protected source checks, and the shared duplicate guard are completed. Thirsty remains the book of record for work-order changes. The chart displays its last verified time and warns when its work-order source is older than 24 hours.
+The coordinator bar now shows separate provider parts and customer tracker draft controls, plus sign-in, source refresh, and Sent Items check controls. **All five controls are checked in disabled.** The chart remains read-only, and Thirsty remains the book of record for work-order changes. This version does not sign in, call Microsoft Graph, create an Outlook draft, or send email.
 
-Anyone with the complete link can view the decrypted chart. The `noindex` tag is advisory; it does not make a public GitHub Pages site private. There is no Power Apps or Power Automate runtime in this viewer.
+The viewer remains a public GitHub Pages site. Anyone with a complete private chart link can view the decrypted chart; `noindex` is only a request to search engines. The page keeps the existing restrictive Content Security Policy, including `connect-src 'self'`, so a future configuration change alone cannot enable Graph or Entra calls.
+
+## Rebuild and verify this held candidate
+
+The reviewed site source and its three source dependencies are vendored under `source/`. The production Vite output is pinned at the repository root, where GitHub Pages serves it. From `source/gantt_github_two_button_site_integrated_source_only_20261123_v1`, run:
+
+```text
+npm ci
+npm test
+npm run build
+npm run smoke
+```
+
+Then run `node scripts/verify-held-candidate.mjs` from the repository root. The verifier checks the pinned root files, unchanged encrypted chart asset, disabled runtime configuration, disabled buttons, restrictive CSP, and rebuilt output when `dist/` is present. `HELD_BUILD_MANIFEST.json` records the exact candidate hashes. The smoke uses only an invented encrypted chart on loopback and makes no external requests.
+
+This candidate is a local review branch. Enabling the buttons requires a separate reviewed release with Entra app registration, delegated access, restricted Lists, a fresh owner-approved Gantt Release, migrated occupied draft keys, and tenant/mailbox canaries. The source package's [integration README](source/gantt_github_two_button_site_integrated_source_only_20261123_v1/README.md) lists those gates in detail.
