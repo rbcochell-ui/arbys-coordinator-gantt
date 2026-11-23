@@ -37,7 +37,7 @@ function outlookLink(href) {
 function previewMessage(preview) {
   switch (preview.status) {
     case 'eligible':
-      return preview.recipientReviewRequired || !preview.to.length
+      return !preview.to.length
         ? 'Source preview passed. To is blank; add and verify recipients in Outlook before Send.'
         : 'Source preview passed. Verify suggested recipients in Outlook before Send.';
     case 'draft_occupied':

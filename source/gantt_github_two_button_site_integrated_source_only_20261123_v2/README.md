@@ -98,7 +98,7 @@ Claim can occupy the provider key without allowing a second draft.
   redirect bridge at the requested exact SPA URL.
 
 Run `npm test`, `npm run build`, and `npm run smoke` from this folder. The
-current result is **15/15 unit tests, a production Vite build, and an isolated
+current result is **16/16 unit tests, a production Vite build, and an isolated
 Edge smoke pass**. The smoke serves an invented encrypted chart on loopback,
 checks the shipped disabled build, then builds a temporary fake-runtime
 variant to exercise both draft buttons, return-to-Gantt Sent checks, an

@@ -50,6 +50,7 @@ async function until(predicate) {
   throw new Error('UI did not reach the expected state');
 }
 function harness({enabled = true, previewStatus = 'eligible',
+    previewTo = [], recipientReviewRequired = false,
     checkResult = {state: 'sent'},
     draftResult = {state: 'draft', webLink: DRAFT_LINK}} = {}) {
   const calls = [];
@@ -69,7 +70,7 @@ function harness({enabled = true, previewStatus = 'eligible',
           previewStatus === 'draft_occupied',
         validUntilUtc: '2099-01-01T00:00:00Z',
         storeNumber: kind === 'provider' ? '1001' : null,
-        to: [], cc: [], recipientReviewRequired: false};
+        to: previewTo, cc: [], recipientReviewRequired};
     },
     async createOrOpenProviderDraft(id) {
       calls.push(['providerDraft', id]);
@@ -100,6 +101,16 @@ function harness({enabled = true, previewStatus = 'eligible',
       await until(() => controls.verifyAction.disabled === false);
     }};
 }
+
+test('provider preview identifies suggested recipients without calling To blank', async () => {
+  const h = harness({previewTo: ['first@example.com', 'second@example.com'],
+    recipientReviewRequired: true});
+  h.select('provider', WO);
+  await h.signIn();
+  assert.equal(h.controls.actionStatus.textContent,
+    'Source preview passed. Verify suggested recipients in Outlook before Send.');
+  h.ui.dispose();
+});
 
 test('checked-in disabled site does not read a mailbox on return', async () => {
   const h = harness({enabled: false});

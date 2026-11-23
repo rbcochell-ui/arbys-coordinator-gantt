@@ -95,7 +95,8 @@ export function canonicalSalesforceId(value) {
 }
 
 export function canonicalFormSourceKey(value) {
-  if (typeof value !== 'string' || value.length > 232 ||
+  // customer-tracker: + FORM key + |SentAttempt must fit a 255-character key.
+  if (typeof value !== 'string' || value.length > 226 ||
       !/^F:[1-9][0-9]*:[1-9][0-9]*$/.test(value)) {
     throw new HeldActionError('FORM_SOURCE_KEY_INVALID');
   }
