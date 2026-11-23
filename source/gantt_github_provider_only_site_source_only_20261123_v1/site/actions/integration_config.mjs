@@ -1,0 +1,31 @@
+/**
+ * Unbound provider-only build. The public repository contains no tenant,
+ * account, List, recipient, tracker capability, or source credentials.
+ */
+import {REDIRECT_URI} from '../../src/auth_config.mjs';
+
+export const INTEGRATION_CONFIG = Object.freeze({
+  enabled: false,
+  encryptedPayloadUrl: null,
+  auth: Object.freeze({enabled: false, tenantId: null, clientId: null,
+    coordinatorOids: Object.freeze([]), redirectUri: REDIRECT_URI}),
+  lean: Object.freeze({
+    enabled: false, tenantId: null, clientId: null, siteId: null,
+    lists: Object.freeze({woSource: null, verifiedContacts: null,
+      customerReleases: null, claims: null, receipts: null}),
+    coordinatorOids: Object.freeze([]),
+    releaseOwnerOids: Object.freeze([]),
+    approvedCustomerReleaseKinds: Object.freeze([]),
+    eligibleRawSpStatuses: Object.freeze([]),
+    eligibleWorkOrderStatuses: Object.freeze([]),
+    eligibleServiceTypeCodes: Object.freeze([]),
+    eligibleWorkOrderTypes: Object.freeze([]),
+    // A missing or stale role pair must hold; an empty To draft is never
+    // a valid fallback for this release.
+    emptyToDraftCanaryPassed: false,
+    occupiedPilotClaimsMigrated: false,
+    providerEnabled: false, customerEnabled: false,
+  }),
+  legacyInventory: null,
+  legacyOwner: null,
+});
