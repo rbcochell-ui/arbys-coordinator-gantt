@@ -128,6 +128,7 @@ class FakeGraph {
     this.claimPosts = 0;
     this.receiptPosts = 0;
     this.draftPosts = 0;
+    this.messageReads = 0;
     this.requestCalls = [];
     this.failClaimAfterPersist = false;
     this.failDraftAfterPersist = false;
@@ -137,6 +138,7 @@ class FakeGraph {
   async getMe() { return this.f.actor; }
   async getFolderId(kind) { return `folder-${kind}`; }
   async getMessage(id) {
+    this.messageReads += 1;
     const message = this.messages.get(id);
     if (!message) throw new GraphHttpError(404);
     return structuredClone(message);
@@ -632,8 +634,10 @@ test('attended Check Sent logs actual edited audience and content once', async (
   await rejectsCode(() => h.flow.checkSent(WO),
     'SNAPSHOT_SENT_RECEIPT_INVALID');
   sent.ReviewReason = 'SENT_DETAILS_CHANGED';
+  const beforeSharedRead = h.graph.messageReads;
   const second = await h.flow.checkSent(WO);
-  assert.equal(second.status, 'sent_with_changes');
+  assert.equal(second.status, 'sent_recorded_unverified');
+  assert.equal(h.graph.messageReads, beforeSharedRead);
   assert.equal(JSON.stringify(second).includes('private-capability'), false);
   assert.equal(Object.hasOwn(second, 'reviewReason'), false);
   assert.equal(h.graph.receiptPosts, 2);
@@ -647,6 +651,77 @@ test('missing immutable message is unresolved, never inferred as sent', async ()
   assert.equal(result.status, 'unresolved');
   assert.equal(h.graph.receiptPosts, 1);
   assert.equal(h.graph.rows.get(LISTS.receipts).length, 1);
+});
+
+test('a shape-valid forged Sent row never proves a send or permits a second draft', async () => {
+  const h = harness();
+  const draft = await h.flow.draft(WO);
+  const dispatchKey = providerDispatchKey(WO);
+  const store = new SnapshotClaimReceiptStore({graph: h.graph,
+    config: config(), now: () => h.f.nowMs});
+  const state = await store.getState(dispatchKey);
+  const message = h.graph.messages.get(draft.immutableId);
+  // Any principal with Add can fabricate shape-valid fields outside this UI.
+  // The actual mailbox message intentionally remains in Drafts.
+  await store.appendSent(state, ACTOR_A, {id: draft.immutableId,
+    to: ['manager@example.invalid', 'planner@example.invalid'],
+    cc: [], bcc: [], sentAtUtc: new Date(NOW).toISOString(),
+    internetMessageId: '<forged@example.invalid>',
+    subject: message.subject, bodySha256: SHA(message.body.content),
+    linksSha256: SHA(JSON.stringify(PICOS_PARTS.map(part => part.url).sort())),
+    reviewReason: ''});
+  assert.equal((await h.flow.preview(WO)).status,
+    'sent_recorded_unverified');
+  const draftPosts = h.graph.draftPosts;
+  await rejectsCode(() => h.flow.checkSent(WO), 'DRAFT_AND_SENT_CONFLICT');
+  await rejectsCode(() => h.flow.draft(WO), 'DRAFT_AND_SENT_CONFLICT');
+  assert.equal(h.graph.draftPosts, draftPosts);
+  h.f.actor = ACTOR_B;
+  const messageReads = h.graph.messageReads;
+  assert.equal((await h.flow.checkSent(WO)).status,
+    'sent_recorded_unverified');
+  assert.equal((await h.flow.draft(WO)).status,
+    'sent_recorded_unverified');
+  assert.equal(h.graph.messageReads, messageReads);
+  assert.equal(h.graph.draftPosts, draftPosts);
+});
+
+test('owner rechecks an existing Sent receipt against mailbox facts', async () => {
+  const h = harness();
+  const draft = await h.flow.draft(WO);
+  const message = h.graph.messages.get(draft.immutableId);
+  message.isDraft = false;
+  message.parentFolderId = 'folder-sentitems';
+  message.sentDateTime = new Date(NOW).toISOString();
+  message.internetMessageId = '<sent@example.invalid>';
+  assert.equal((await h.flow.checkSent(WO)).status, 'sent');
+  assert.equal((await h.flow.preview(WO)).status,
+    'sent_recorded_unverified');
+  const receiptPosts = h.graph.receiptPosts;
+  const messageReads = h.graph.messageReads;
+  assert.equal((await h.flow.checkSent(WO)).status, 'sent');
+  assert.equal(h.graph.receiptPosts, receiptPosts);
+  assert.equal(h.graph.messageReads, messageReads + 1);
+  const sent = h.graph.rows.get(LISTS.receipts)[1].fields;
+  sent.ActualBodySha256 = 'f'.repeat(64);
+  await rejectsCode(() => h.flow.checkSent(WO), 'SENT_RECEIPT_CONFLICT');
+  assert.equal(h.graph.receiptPosts, receiptPosts);
+});
+
+test('a Sent row with a missing original immutable ID remains unresolved', async () => {
+  const h = harness();
+  const draft = await h.flow.draft(WO);
+  const message = h.graph.messages.get(draft.immutableId);
+  message.isDraft = false;
+  message.parentFolderId = 'folder-sentitems';
+  message.sentDateTime = new Date(NOW).toISOString();
+  message.internetMessageId = '<sent@example.invalid>';
+  assert.equal((await h.flow.checkSent(WO)).status, 'sent');
+  h.graph.messages.delete(draft.immutableId);
+  const draftPosts = h.graph.draftPosts;
+  assert.equal((await h.flow.checkSent(WO)).status, 'unresolved');
+  assert.equal((await h.flow.draft(WO)).status, 'unresolved');
+  assert.equal(h.graph.draftPosts, draftPosts);
 });
 
 test('snapshot writer reads old V2 provider Claim as occupied', async () => {
@@ -732,4 +807,24 @@ test('customer adapter drops raw free text from a shared Sent result', async () 
   await adapter.signInFromClick();
   const result = await adapter.verifySentBySelection('customer', 'F:123:456');
   assert.deepEqual(result, {state: 'sent_with_changes'});
+});
+
+test('adapter maps a shared Sent record to a held state without a draft link', async () => {
+  const h = harness();
+  const actions = {
+    async preview(kind, id) { return {kind, id,
+      status: 'sent_recorded_unverified', storeNumber: null,
+      to: [], cc: [], webLink: null}; },
+    async customerDraft() { return {status: 'sent_recorded_unverified'}; },
+    async checkCustomerSent() { return {status: 'sent_recorded_unverified'}; },
+  };
+  const adapter = createV2ParentAdapter({enabled: true, actions,
+    signIn: async () => {}, providerFlow: h.flow});
+  await adapter.signInFromClick();
+  const preview = await adapter.preview('customer', 'F:123:456');
+  assert.equal(preview.canDraft, false);
+  assert.deepEqual(await adapter.verifySentBySelection('customer', 'F:123:456'),
+    {state: 'held', reason: 'SHARED_SENT_RECORD_UNVERIFIED'});
+  assert.deepEqual(await adapter.createOrOpenCustomerDraft('F:123:456'),
+    {state: 'held', reason: 'SHARED_SENT_RECORD_UNVERIFIED'});
 });

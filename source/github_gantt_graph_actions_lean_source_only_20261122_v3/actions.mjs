@@ -272,14 +272,17 @@ export class LeanGanttActions {
   }
 
   async _existingAction(state, context) {
-    // A validated, append-only Sent receipt is shared team status. Reading it
-    // does not grant access to another coordinator's mailbox or draft.
-    if (state.sent) return {
-      status: state.sent.fields.ReviewReason ? 'sent_with_changes' : 'sent',
-      dispatchKey: state.claim.fields.DispatchKey,
-      sentAtUtc: state.sent.fields.SentAtUtc,
-      reviewReason: sharedSentReview(state.sent.fields.ReviewReason),
-    };
+    // A shared row occupies the key but cannot itself prove a mailbox send.
+    // Only the claim owner can verify the original message through /me.
+    if (state.sent) {
+      if (state.claim.fields.MigratedFrom ||
+          state.claim.fields.ActorOid.toLowerCase() !== context.actor.id ||
+          state.claim.fields.ActorEmail !== context.actor.address) {
+        return {status: 'sent_recorded_unverified',
+          dispatchKey: state.claim.fields.DispatchKey};
+      }
+      return this._checkState(state, context);
+    }
     if (state.claim.fields.ActorOid.toLowerCase() !== context.actor.id ||
         state.claim.fields.ActorEmail !== context.actor.address) {
       return {status: 'draft_status_unverified',
@@ -306,8 +309,8 @@ export class LeanGanttActions {
     const context = await this._context(kind);
     const state = await context.store.getState(dispatchKey);
     if (state) {
-      const status = state.sent ? (state.sent.fields.ReviewReason ?
-        'sent_with_changes' : 'sent') : state.claim.fields.MigratedFrom ?
+      const status = state.sent ? 'sent_recorded_unverified' :
+        state.claim.fields.MigratedFrom ?
         'legacy_occupied' : state.claim.fields.ActorOid.toLowerCase() !==
         context.actor.id ? 'draft_status_unverified' : state.draft ?
           'draft_occupied' : 'claim_outcome_unverified';

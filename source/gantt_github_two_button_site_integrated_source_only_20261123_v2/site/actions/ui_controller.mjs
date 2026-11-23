@@ -5,6 +5,7 @@ const HELD_MESSAGES = Object.freeze({
   DRAFT_OWNED_ELSEWHERE: 'Another coordinator owns an unresolved draft for this ID.',
   LEGACY_OCCUPIED: 'An earlier pilot draft needs owner reconciliation.',
   CLAIM_OUTCOME_UNVERIFIED: 'The claim outcome needs owner reconciliation.',
+  SHARED_SENT_RECORD_UNVERIFIED: 'A shared Sent record exists. The draft owner can use Check Sent to verify it in their mailbox; no new draft will be made.',
   SENT_STATE_UNRESOLVED: 'The mailbox state could not be confirmed. Try Check Sent later.',
 });
 
@@ -44,6 +45,8 @@ function previewMessage(preview) {
     case 'sent': return 'A Sent Items receipt already confirms this message.';
     case 'sent_with_changes':
       return 'A Sent Items receipt confirms this message with changes; review the receipt.';
+    case 'sent_recorded_unverified':
+      return HELD_MESSAGES.SHARED_SENT_RECORD_UNVERIFIED;
     case 'draft_status_unverified':
       return HELD_MESSAGES.DRAFT_OWNED_ELSEWHERE;
     case 'legacy_occupied': return HELD_MESSAGES.LEGACY_OCCUPIED;

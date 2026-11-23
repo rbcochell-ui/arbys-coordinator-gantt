@@ -1,6 +1,7 @@
 const PREVIEW_STATUSES = new Set([
   'eligible', 'draft_occupied', 'draft_status_unverified',
-  'legacy_occupied', 'claim_outcome_unverified', 'sent',
+  'legacy_occupied', 'claim_outcome_unverified',
+  'sent_recorded_unverified', 'sent',
   'sent_with_changes',
 ]);
 const DRAFT_STATUSES = new Set([
@@ -12,6 +13,7 @@ const HELD_REASONS = Object.freeze({
   draft_status_unverified: 'DRAFT_OWNED_ELSEWHERE',
   legacy_occupied: 'LEGACY_OCCUPIED',
   claim_outcome_unverified: 'CLAIM_OUTCOME_UNVERIFIED',
+  sent_recorded_unverified: 'SHARED_SENT_RECORD_UNVERIFIED',
   unresolved: 'SENT_STATE_UNRESOLVED',
 });
 

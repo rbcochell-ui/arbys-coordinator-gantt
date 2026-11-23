@@ -200,6 +200,23 @@ test('another coordinator’s occupied key stays held on focus', async () => {
   h.ui.dispose();
 });
 
+test('a shared Sent row stays visibly unverified and cannot arm either draft', async () => {
+  const h = harness({previewStatus: 'sent_recorded_unverified',
+    checkResult: {state: 'held', reason: 'SHARED_SENT_RECORD_UNVERIFIED'}});
+  h.select('customer', FORM);
+  await h.signIn();
+  await until(() => /shared Sent record exists/u.test(
+    h.controls.actionStatus.textContent));
+  assert.equal(h.controls.providerDraftAction.disabled, true);
+  assert.equal(h.controls.customerDraftAction.disabled, true);
+  assert.equal(h.calls.some(call => call[0] === 'customerDraft'), false);
+  await h.controls.checkSentAction.click();
+  assert.match(h.controls.actionStatus.textContent,
+    /draft owner can use Check Sent to verify it in their mailbox/u);
+  assert.equal(h.calls.some(call => call[0] === 'customerDraft'), false);
+  h.ui.dispose();
+});
+
 test('a changed selection discards an in-flight Sent result', async () => {
   let releaseCheck;
   const h = harness({checkResult: () => new Promise(resolve => {

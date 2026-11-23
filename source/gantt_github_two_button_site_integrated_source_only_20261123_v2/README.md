@@ -66,7 +66,7 @@ Claim can occupy the provider key without allowing a second draft.
   redirect bridge at the requested exact SPA URL.
 
 Run `npm test`, `npm run build`, and `npm run smoke` from this folder. The
-current result is **12/12 unit tests, a production Vite build, and an isolated
+current result is **13/13 unit tests, a production Vite build, and an isolated
 Edge smoke pass**. The smoke serves an invented encrypted chart on loopback,
 checks the shipped disabled build, then builds a temporary fake-runtime
 variant to exercise both draft buttons, return-to-Gantt Sent checks, an
@@ -74,10 +74,11 @@ occupied key owned by another coordinator, and manual Check Sent. It verifies
 selection alone makes no draft call, invalid selection and iframe reload
 clear action eligibility, mobile width, and zero external requests. The fake
 variant is removed after the test and is not present in `dist`. The vendored
-provider V4 suite passes 31/31 tests, including a Claim appearing between the
+provider V4 suite passes 35/35 tests, including a Claim appearing between the
 caller and writer reads, and a rejected draft result that skips post-Claim
 verification. Its tests verify Release, Claim, six-link draft,
-cross-action privacy, reopening, and Sent behavior using invented data. Its
+cross-action privacy, reopening, and Sent behavior using invented data. A shared
+Sent row is held as unverified until the draft owner checks their mailbox. Its
 separate Edge dated-panel smoke also passes.
 These are local tests, not live tenant or mailbox evidence.
 

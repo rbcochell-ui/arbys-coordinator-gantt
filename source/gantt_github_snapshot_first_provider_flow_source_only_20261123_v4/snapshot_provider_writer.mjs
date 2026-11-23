@@ -213,8 +213,7 @@ export class SnapshotProviderActionWriter {
     const context = await this._context(actor);
     const state = await context.store.getState(dispatchKey);
     if (!state) return {status: 'absent', dispatchKey};
-    if (state.sent) return {status: state.sent.fields.ReviewReason ?
-      'sent_with_changes' : 'sent', dispatchKey};
+    if (state.sent) return {status: 'sent_recorded_unverified', dispatchKey};
     if (state.claim.fields.MigratedFrom) return {status: 'legacy_occupied', dispatchKey};
     if (state.claim.fields.ActorOid.toLowerCase() !== context.actor.id ||
         state.claim.fields.ActorEmail !== context.actor.address) {
@@ -226,9 +225,14 @@ export class SnapshotProviderActionWriter {
 
   async _existing(state, context) {
     const dispatchKey = state.claim.fields.DispatchKey;
-    if (state.sent) return {status: state.sent.fields.ReviewReason ?
-      'sent_with_changes' : 'sent', dispatchKey,
-      sentAtUtc: state.sent.fields.SentAtUtc};
+    if (state.sent) {
+      if (state.claim.fields.MigratedFrom ||
+          state.claim.fields.ActorOid.toLowerCase() !== context.actor.id ||
+          state.claim.fields.ActorEmail !== context.actor.address) {
+        return {status: 'sent_recorded_unverified', dispatchKey};
+      }
+      return this._checkState(state, context);
+    }
     if (state.claim.fields.MigratedFrom) {
       return {status: 'legacy_occupied', dispatchKey};
     }
@@ -370,6 +374,7 @@ export class SnapshotProviderActionWriter {
     if (message.isDraft === true) {
       const draftsId = await context.graph.getFolderId('drafts');
       if (message.parentFolderId !== draftsId) fail('DRAFT_IDENTITY_MISMATCH');
+      if (state.sent) fail('DRAFT_AND_SENT_CONFLICT');
       const webLink = validatedOutlookLink(message.webLink);
       const reasons = [];
       let recipientReviewRequired = evidence.to.length === 0;
@@ -432,7 +437,23 @@ export class SnapshotProviderActionWriter {
       internetMessageId: message.internetMessageId,
       subject: message.subject, bodySha256, linksSha256,
       reviewReason: differences.join('; ')};
-    await context.store.appendSent(state, context.actor, actual);
+    if (state.sent) {
+      const f = state.sent.fields;
+      if (f.SentImmutableId !== actual.id ||
+          f.SentAtUtc !== actual.sentAtUtc ||
+          f.SentInternetMessageId !== actual.internetMessageId ||
+          f.ActualSubject !== `sha256:${await sha256(actual.subject)}` ||
+          f.ActualBodySha256 !== actual.bodySha256 ||
+          f.ActualLinksSha256 !== actual.linksSha256 ||
+          f.ActualToJson !== JSON.stringify(actual.to) ||
+          f.ActualCcJson !== JSON.stringify(actual.cc) ||
+          f.ActualBccJson !== JSON.stringify(actual.bcc) ||
+          f.ReviewReason !== (actual.reviewReason ? 'SENT_DETAILS_CHANGED' : '')) {
+        fail('SENT_RECEIPT_CONFLICT');
+      }
+    } else {
+      await context.store.appendSent(state, context.actor, actual);
+    }
     return {status: differences.length ? 'sent_with_changes' : 'sent',
       dispatchKey: key, sentAtUtc: actual.sentAtUtc};
   }

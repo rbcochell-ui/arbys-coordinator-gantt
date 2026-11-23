@@ -6,7 +6,8 @@
 const CODE = /^[A-Z0-9_]{3,80}$/u;
 const THIRSTY_BASE = 'https://hubit.my.salesforce.com/lightning/r/WorkOrder/';
 const OCCUPIED = new Set(['draft_occupied', 'draft_status_unverified',
-  'legacy_occupied', 'claim_outcome_unverified', 'sent',
+  'legacy_occupied', 'claim_outcome_unverified',
+  'sent_recorded_unverified', 'sent',
   'sent_with_changes']);
 
 function fail(code) {
@@ -103,6 +104,8 @@ export function createDatedProviderReviewPanel({elements,
         reviewWarning.textContent = 'Check current Thirsty phase, parts need, assigned agent, service date and fountain scope before sending any existing draft. Review all six myCoke links in Outlook.';
         status.textContent = preview.existingStatus === 'draft_occupied'
           ? 'Existing Outlook draft can be reopened for review.'
+          : preview.existingStatus === 'sent_recorded_unverified'
+            ? 'A shared Sent record exists. Check Sent in the draft owner’s mailbox to verify it.'
           : preview.existingStatus === 'sent' ||
               preview.existingStatus === 'sent_with_changes'
             ? 'A Sent Items receipt is recorded for this WO.'

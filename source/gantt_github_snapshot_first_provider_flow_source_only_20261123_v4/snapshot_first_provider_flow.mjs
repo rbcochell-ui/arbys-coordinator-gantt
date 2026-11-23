@@ -18,11 +18,12 @@ const DATE = /^\d{4}-\d\d-\d\d$/u;
 const PREINSTALL = new Set(['Pending Readiness', 'Pending Scheduled Date']);
 const OBSERVED = new Set(['absent', 'draft_occupied',
   'draft_status_unverified', 'legacy_occupied',
-  'claim_outcome_unverified', 'sent', 'sent_with_changes']);
+  'claim_outcome_unverified', 'sent_recorded_unverified']);
 const WRITER_RESULTS = new Set(['draft', 'recipient_review_required',
   'draft_review_required', 'source_changed_review_required',
   'draft_status_unverified', 'legacy_occupied',
-  'claim_outcome_unverified', 'sent', 'sent_with_changes', 'unresolved',
+  'claim_outcome_unverified', 'sent_recorded_unverified',
+  'sent', 'sent_with_changes', 'unresolved',
   'not_started']);
 
 export class SnapshotFlowHeldError extends Error {
