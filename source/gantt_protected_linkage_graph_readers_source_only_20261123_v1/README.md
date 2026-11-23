@@ -1,0 +1,32 @@
+# Protected linkage Graph readers — held source proposal
+
+This directory does not change GitHub Pages, SharePoint, Power Platform, Outlook, or the customer tracker. It adds a read-only candidate for the two callbacks required by provider V5. The checked-in Gantt still supplies neither callback and all action flags remain disabled. The tests use invented IDs and rows.
+
+## Why the current three Lists are insufficient
+
+`Arbys Coordinator Action Claims` and `Arbys Coordinator Action Receipts` are append-only action ledgers. The proposed singleton `Arbys Coordinator Gantt Releases` row approves chart hashes and reserves `LegacyFenceProofJson` and `LegacyFenceApprovalJson` for the old-draft inventory. None carries a current owner-reviewed `ArbysReviewedLinkageEvidence/v1` packet or its distinct `ArbysLinkageOwnerApproval/v1` record. The operating reference Lists are pilot-scoped and do not contain the full native Case → FORM anchor, original FORM address, or complete chart cohort. The chart itself cannot become the independent evidence source.
+
+## Smallest direct-Graph storage proposal
+
+[`STORAGE_CONTRACT_PROPOSAL.json`](STORAGE_CONTRACT_PROPOSAL.json) proposes one new, owner-write/coordinator-read protected SharePoint List, `Arbys Coordinator Linkage Evidence`, with one current `EvidenceJson` row and a unique `EvidenceKey`. It also proposes one new optional plain Note column `LinkageApprovalJson` on the **separate**, still-proposed `Arbys Coordinator Gantt Releases` singleton. The old `LegacyFence*` fields remain reserved. The Release List schema/hash and three-List setup plan would need a reviewed revision **before** any List setup. There is no current tenant List GUID or approved row to configure here.
+
+The Release and action-List schema files copied beside this package are redacted public test references. They retain the column shapes used by the tests and preserve a distinct owner plus two individual coordinator roles. They are not hash-equivalent to the private setup contracts and must not be used to provision Lists.
+
+The evidence packet must contain the full charted FORM project, native Case, and native WO cohort; complete FORM and WO addresses including an explicit suite/line2 string on missing-store matches; Case ACN; native WO store/ACN/number, Case ID and raw combined `Assigned SP - Name`; original store/ACN/agent linkage rows; and the agent directory manager/planner pairs. The source owner must review the original protected records independently and issue the packet. `observedAtUtc` must be at least as new as the dated Thirsty overlay. The owner then approves the **exact Graph-returned UTF-8 `EvidenceJson` bytes** by SHA-256 in the separate Release field, with an approval window no longer than 24 hours from observation. The approval JSON contains only its six declared fields; the reader derives ETag, last modifier OID, and modification time from Graph metadata. A Graph read timestamp is not a source review.
+
+The reader requires a delegated account-pinned `GraphClient` closure and actual site/List IDs supplied after tenant readback. It checks `/me` against named coordinator OIDs on every callback, pins that actor for the page lifetime, reads each exact List identity, requires one row total and no next page, rereads the item by ID and requires identical fields/ETag, checks the current owner modifier, and returns the exact evidence string or derived approval object. It has no write, Send, or draft method. V5 still computes the evidence SHA-256, compares the full chart/packet cohort, and rereads the two sources at preview, initial, latest, and postclaim stages. The module cannot prove SharePoint ACLs, selected app grants, current source correctness, or an owner's actual review. These remain tenant gates.
+
+Microsoft documents a SharePoint multiple-lines column limit of [63,999 characters](https://support.microsoft.com/en-us/sharepoint/lists/data-and-lists/list-and-library-column-types-and-options). The candidate caps the packet at 60,000 UTF-8 bytes, below that character ceiling. **This cap remains provisional until an approvable complete packet and a tenant round-trip prove no truncation.** A packet over the cap holds; do not drop projects or work orders to fit. If the complete cohort does not fit, revise to per-project evidence rows plus an exact owner-approved cohort manifest, with every row and ETag reread, no pagination, deterministic full-packet assembly, and the same full-cohort V5 comparison. The current source-only candidate does not implement that larger format.
+
+A separate private source audit found that a structural packet could fit this candidate's 60,000-byte cap, but the independent source cohort and provenance remain incomplete. The measurement is **not an approved packet**, cannot bound future growth, and has not been written to a public repository. The source owner must reconcile those records before approving exact protected bytes.
+
+When directory rows conflict for a selected agent, the transport returns all approved source rows unchanged. It must not choose or suppress a row to make V5 pass. A distinct source-owner decision and versioned selection verifier are required before a contact can be prefilled.
+
+## Still missing
+
+1. Reconcile native Case claims, missing account identifiers, inbound provenance, source freshness, and conflicting provider-directory rows. Only then can an independent, current full-cohort packet and its owner approval be issued.
+2. An actual protected Evidence List and revised Release column, exact IDs and schema/ACL/People/Groups/Links readbacks, named owner write and coordinator read rights, and selected app read grants to both Lists. An Entra delegated SPA registration and consent are also unverified.
+3. A real owner approval over exact saved bytes, owner OID allowlist, ETag/modified metadata, freshness and revocation procedure; a live two-user Graph read and failure canary.
+4. Integration after sign-in: `compose_site.mjs` currently builds the linkage port before its bound Graph client and `site/view.mjs` passes no readers. Wiring needs a separately reviewed version, not merely flipping `enabled`.
+
+Run `node --test gantt_protected_linkage_graph_readers_source_only_20261123_v1/*.test.mjs` from the workspace root. The eight synthetic tests include one complete reader → existing V5 linkage-port success path with checksummed invented Salesforce IDs; they prove the local read contract only.

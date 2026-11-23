@@ -1,0 +1,40 @@
+{
+  "kind": "protected-provider-linkage-source-only-proposal",
+  "schema": "arbys-gantt-protected-linkage-storage/v1",
+  "status": "source-only redacted public proposal; not an installable ACL contract; no List, row, grant, owner approval, or deployment exists by virtue of this file",
+  "siteUrl": "https://groups.coca-cola.com/sites/ArbysOperations",
+  "evidenceList": {
+    "title": "Arbys Coordinator Linkage Evidence",
+    "baseTemplate": 100,
+    "oneCurrentRowTotal": true,
+    "enableVersioning": true,
+    "enableAttachments": false,
+    "key": "arbys-coordinator-gantt:linkage-evidence",
+    "columns": [
+      {"name": "Title", "type": "Text", "maxLength": 255, "required": true, "builtIn": true},
+      {"name": "EvidenceKey", "type": "Text", "maxLength": 128, "required": true, "indexed": true, "enforceUniqueValues": true},
+      {"name": "EvidenceJson", "type": "Note", "richText": false, "appendChanges": false, "required": true}
+    ],
+    "runtimeMaxEvidenceUtf8Bytes": 60000,
+    "permissions": {
+      "ownerWrite": ["Named release owner", "Site Owners group"],
+      "coordinatorRead": ["Named coordinator user 1", "Named coordinator user 2"],
+      "noMembersOrVisitorsOrSharingLinks": true,
+      "delegatedAppGrant": "selected read on this exact List ID, after separate consent"
+    }
+  },
+  "releaseListDelta": {
+    "title": "Arbys Coordinator Gantt Releases",
+    "key": "arbys-coordinator-gantt:provider-snapshot",
+    "addColumn": {"name": "LinkageApprovalJson", "type": "Note", "richText": false, "appendChanges": false, "required": false},
+    "runtimeMaxApprovalUtf8Bytes": 2000,
+    "approvalSchema": "ArbysLinkageOwnerApproval/v1",
+    "approvalJsonFields": ["schema", "payloadSha256", "observedAtUtc", "approvedAtUtc", "validUntilUtc", "approvedByOid"],
+    "approvalMetadataFromGraph": ["eTag", "lastModifiedBy.user.id", "lastModifiedDateTime"],
+    "legacyFenceColumnsRemainReserved": ["LegacyFenceProofJson", "LegacyFenceApprovalJson"]
+  },
+  "evidenceSchema": "ArbysReviewedLinkageEvidence/v1",
+  "readRule": "two independent fresh delegated Graph reads of distinct List GUIDs at each provider V5 read; no chart-derived packet or public GitHub source",
+  "packetIssuance": "source owner must independently review original FORM, native Case-to-FORM and WO-to-Case links, current WO fields, original store/ACN/agent linkage and agent directory, then approve the exact Graph-returned UTF-8 packet bytes within 24 hours",
+  "activation": "held until revised List schema, actual tenant ACLs, selected grants, current packet, independent owner approval, source readbacks, and live canaries are verified"
+}

@@ -1,0 +1,147 @@
+{
+  "kind": "protected-owner-approved-gantt-release-list",
+  "schema": "arbys-coordinator-gantt-release-ui/public-reference-v3",
+  "status": "redacted public reference only; not an installable or approved List contract",
+  "siteUrl": "https://groups.coca-cola.com/sites/ArbysOperations",
+  "publicRepositoryUrl": "https://github.com/rbcochell-ui/arbys-coordinator-gantt",
+  "publicAppUrl": "https://rbcochell-ui.github.io/arbys-coordinator-gantt/",
+  "encryptedPayloadUrl": "https://rbcochell-ui.github.io/arbys-coordinator-gantt/data/gantt.enc.json",
+  "constraints": {
+    "noItemsDuringProvisioning": true,
+    "fixedReleaseKey": "arbys-coordinator-gantt:provider-snapshot",
+    "oneCurrentRowTotal": true,
+    "ownerOnlyWrites": true,
+    "maxApprovalWindowHours": 24,
+    "noPowerPlatformRuntime": true,
+    "legacyProofOnSingletonRow": true,
+    "legacyProofApprovalIndependentOfChartExpiry": true,
+    "missingOrChangedLegacyProofHoldsDraftActions": true,
+    "reviewedDeploymentPinRequired": true,
+    "legacyProofSchema": "legacy-complete-inventory/v3",
+    "legacyApprovalSchema": "legacy-complete-inventory-approval/v3",
+    "legacyProofMaxAgeHours": 24,
+    "completeOldSourceAndWriterInventoryRequired": true,
+    "oldWriterRetirementOrPrivilegedLiveCheckRequired": true
+  },
+  "list": {
+    "key": "ganttRelease",
+    "title": "Arbys Coordinator Gantt Releases",
+    "baseTemplate": 100,
+    "hidden": false,
+    "onQuickLaunch": false,
+    "enableVersioning": true,
+    "enableAttachments": false,
+    "columns": [
+      {
+        "name": "Title",
+        "type": "Text",
+        "maxLength": 255,
+        "required": true,
+        "builtIn": true
+      },
+      {
+        "name": "ReleaseKey",
+        "type": "Text",
+        "maxLength": 128,
+        "required": true,
+        "indexed": true,
+        "enforceUniqueValues": true
+      },
+      {
+        "name": "ReleaseState",
+        "type": "Choice",
+        "choices": ["Approved", "Revoked"],
+        "required": true
+      },
+      {
+        "name": "DecryptedHtmlSha256",
+        "type": "Text",
+        "maxLength": 64,
+        "required": true
+      },
+      {
+        "name": "EncryptedPayloadSha256",
+        "type": "Text",
+        "maxLength": 64,
+        "required": true
+      },
+      {
+        "name": "SnapshotAsOfDate",
+        "type": "Text",
+        "maxLength": 10,
+        "required": true
+      },
+      {
+        "name": "OverlayObservedAtUtc",
+        "type": "Text",
+        "maxLength": 40,
+        "required": true
+      },
+      {
+        "name": "SourceReportSha256",
+        "type": "Text",
+        "maxLength": 64,
+        "required": true
+      },
+      {
+        "name": "ApprovedAtUtc",
+        "type": "Text",
+        "maxLength": 40,
+        "required": true
+      },
+      {
+        "name": "ValidUntilUtc",
+        "type": "Text",
+        "maxLength": 40,
+        "required": true
+      },
+      {
+        "name": "ApprovedByOid",
+        "type": "Text",
+        "maxLength": 36,
+        "required": true
+      },
+      {
+        "name": "EncryptedPayloadUrl",
+        "type": "Text",
+        "maxLength": 255,
+        "required": true
+      },
+      {
+        "name": "LegacyFenceProofJson",
+        "type": "Note",
+        "richText": false,
+        "appendChanges": false,
+        "required": false
+      },
+      {
+        "name": "LegacyFenceApprovalJson",
+        "type": "Note",
+        "richText": false,
+        "appendChanges": false,
+        "required": false
+      }
+    ]
+  },
+  "permissions": {
+    "inheritance": "broken-with-copy-then-prune-while-empty",
+    "releaseOwner": "Full Control",
+    "ownersGroup": "Full Control",
+    "coordinatorOne": "Gantt Release View",
+    "coordinatorTwo": "Gantt Release View",
+    "ganttReleaseView": {
+      "maskHex": "0x2000031001",
+      "rights": [
+        "ViewListItems",
+        "ViewFormPages",
+        "Open",
+        "ViewPages",
+        "UseRemoteAPIs"
+      ]
+    },
+    "noOtherDirectAssignments": true,
+    "noSharingLinks": true,
+    "finalEffectiveAudienceReadbackRequired": true,
+    "selectedAppGrant": "read"
+  }
+}

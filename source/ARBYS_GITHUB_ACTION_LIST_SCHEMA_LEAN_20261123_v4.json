@@ -1,0 +1,316 @@
+{
+  "kind": "empty-sharepoint-action-lists",
+  "schema": "arbys-github-action-lists-lean/public-reference-v4",
+  "status": "redacted public reference only; not an installable or approved List contract",
+  "siteUrl": "https://groups.coca-cola.com/sites/ArbysOperations",
+  "constraints": {
+    "noItemsDuringProvisioning": true
+  },
+  "lists": [
+    {
+      "key": "claims",
+      "title": "Arbys Coordinator Action Claims",
+      "columns": [
+        {
+          "name": "Title",
+          "type": "Text",
+          "maxLength": 255,
+          "required": true,
+          "builtIn": true
+        },
+        {
+          "name": "DispatchKey",
+          "type": "Text",
+          "maxLength": 255,
+          "required": true,
+          "indexed": true,
+          "enforceUniqueValues": true
+        },
+        {
+          "name": "ActionKind",
+          "type": "Choice",
+          "choices": [
+            "provider-parts",
+            "customer-tracker"
+          ],
+          "required": true
+        },
+        {
+          "name": "EntityId",
+          "type": "Text",
+          "maxLength": 232,
+          "required": true
+        },
+        {
+          "name": "ActorOid",
+          "type": "Text",
+          "maxLength": 36,
+          "required": true
+        },
+        {
+          "name": "ActorEmail",
+          "type": "Text",
+          "maxLength": 254,
+          "required": true
+        },
+        {
+          "name": "AttemptId",
+          "type": "Text",
+          "maxLength": 36,
+          "required": true
+        },
+        {
+          "name": "CorrelationId",
+          "type": "Text",
+          "maxLength": 36,
+          "required": true
+        },
+        {
+          "name": "SourceDigest",
+          "type": "Text",
+          "maxLength": 64,
+          "required": true
+        },
+        {
+          "name": "SourceETagsJson",
+          "type": "Note",
+          "richText": false,
+          "appendChanges": false,
+          "required": true
+        },
+        {
+          "name": "ClaimedAtUtc",
+          "type": "Text",
+          "maxLength": 40,
+          "required": true
+        },
+        {
+          "name": "MigratedFrom",
+          "type": "Text",
+          "maxLength": 120,
+          "required": false
+        }
+      ]
+    },
+    {
+      "key": "receipts",
+      "title": "Arbys Coordinator Action Receipts",
+      "columns": [
+        {
+          "name": "Title",
+          "type": "Text",
+          "maxLength": 255,
+          "required": true,
+          "builtIn": true
+        },
+        {
+          "name": "ReceiptKey",
+          "type": "Text",
+          "maxLength": 255,
+          "required": true,
+          "indexed": true,
+          "enforceUniqueValues": true
+        },
+        {
+          "name": "DispatchKey",
+          "type": "Text",
+          "maxLength": 255,
+          "required": true,
+          "indexed": true
+        },
+        {
+          "name": "Kind",
+          "type": "Choice",
+          "choices": [
+            "Draft",
+            "SentAttempt",
+            "Sent"
+          ],
+          "required": true
+        },
+        {
+          "name": "ClaimItemId",
+          "type": "Text",
+          "maxLength": 40,
+          "required": true
+        },
+        {
+          "name": "ActorOid",
+          "type": "Text",
+          "maxLength": 36,
+          "required": true
+        },
+        {
+          "name": "DraftImmutableId",
+          "type": "Note",
+          "richText": false,
+          "appendChanges": false,
+          "required": false
+        },
+        {
+          "name": "DraftWebLink",
+          "type": "Note",
+          "richText": false,
+          "appendChanges": false,
+          "required": false
+        },
+        {
+          "name": "IntendedSubject",
+          "type": "Text",
+          "maxLength": 255,
+          "required": false
+        },
+        {
+          "name": "IntendedToJson",
+          "type": "Note",
+          "richText": false,
+          "appendChanges": false,
+          "required": false
+        },
+        {
+          "name": "RequiredLinksJson",
+          "type": "Note",
+          "richText": false,
+          "appendChanges": false,
+          "required": false
+        },
+        {
+          "name": "IntendedBodySha256",
+          "type": "Text",
+          "maxLength": 64,
+          "required": false
+        },
+        {
+          "name": "SentImmutableId",
+          "type": "Note",
+          "richText": false,
+          "appendChanges": false,
+          "required": false
+        },
+        {
+          "name": "ActualSubject",
+          "type": "Text",
+          "maxLength": 255,
+          "required": false
+        },
+        {
+          "name": "ActualBodySha256",
+          "type": "Text",
+          "maxLength": 64,
+          "required": false
+        },
+        {
+          "name": "ActualLinksSha256",
+          "type": "Text",
+          "maxLength": 64,
+          "required": false
+        },
+        {
+          "name": "ActualToJson",
+          "type": "Note",
+          "richText": false,
+          "appendChanges": false,
+          "required": false
+        },
+        {
+          "name": "ActualCcJson",
+          "type": "Note",
+          "richText": false,
+          "appendChanges": false,
+          "required": false
+        },
+        {
+          "name": "ActualBccJson",
+          "type": "Note",
+          "richText": false,
+          "appendChanges": false,
+          "required": false
+        },
+        {
+          "name": "SentAtUtc",
+          "type": "Text",
+          "maxLength": 40,
+          "required": false
+        },
+        {
+          "name": "SentInternetMessageId",
+          "type": "Note",
+          "richText": false,
+          "appendChanges": false,
+          "required": false
+        },
+        {
+          "name": "ReviewReason",
+          "type": "Note",
+          "richText": false,
+          "appendChanges": false,
+          "required": false
+        },
+        {
+          "name": "RecordedAtUtc",
+          "type": "Text",
+          "maxLength": 40,
+          "required": true
+        },
+        {
+          "name": "MigratedFrom",
+          "type": "Text",
+          "maxLength": 120,
+          "required": false
+        },
+        {
+          "name": "PlannedSentSha256",
+          "type": "Text",
+          "maxLength": 64,
+          "required": false
+        }
+      ]
+    }
+  ],
+  "dispatchKeyFormat": {
+    "provider": "provider-parts:<18-character native Salesforce WO ID>",
+    "providerEntityGrammar": "exactly 18 case-sensitive ASCII letters/digits with valid Salesforce 3-character case checksum; no trim or case conversion",
+    "customer": "customer-tracker:<FORM source key>",
+    "customerEntityGrammar": "F:<positive unpadded decimal>:<positive unpadded decimal>; ASCII only, exact case and bytes, no trim",
+    "customerFormSourceKeyMaxAsciiLength": 232,
+    "receiptSuffixes": [
+      "|Draft",
+      "|SentAttempt",
+      "|Sent"
+    ],
+    "revisionPolicy": "no agent, recipient, date, or automatic revision in a first-draft key"
+  },
+  "listNavigation": {
+    "onQuickLaunch": false,
+    "hiddenProperty": "not set or verified by the held V2 provisioner; do not describe these Lists as SharePoint Hidden"
+  },
+  "permissions": {
+    "coordinatorRights": "named coordinators may view and add only; no edit or delete on Claims or Receipts",
+    "owners": "named release owner and site Owners group have full control",
+    "ownerException": "human List owners can edit or delete; the Gantt runtime itself has no PATCH or DELETE route. Do not describe owner rights as append-only.",
+    "siteGroupsNotGranted": [
+      "Arbys Operations Members",
+      "Arbys Operations Visitors"
+    ],
+    "sharingLinks": "none",
+    "app": "single-tenant Entra SPA selected write on these two Lists only; selected read on approved source Lists separately"
+  },
+  "identityBinding": {
+    "claimAndReceiptActor": "compare ActorOid and ActorEmail to delegated Graph /me before insert and after readback",
+    "createdBy": "For migrated Claim, Draft and SentAttempt rows compare persisted Graph createdBy.user.id with the delegated owner OID; hold any missing or mismatched creator. Tenant canary must confirm exact mapping before activation.",
+    "sentObservation": "only the Claim mailbox owner may record Sent after reading that mailbox's actual Sent Items copy and opaque correlation header",
+    "threatBoundary": "the unique keys prevent accidental duplicate first drafts; direct Add Items access and human owner rights are not a tamper-proof audit"
+  },
+  "kindValidation": "SharePoint cannot make fields conditionally required by receipt Kind; runtime validates Draft, SentAttempt and Sent shapes. A unique SentAttempt is required before a migrated legacy Sent receipt; a marker without Sent requires owner reconciliation and forbids browser retry.",
+  "customerReleaseDependency": "A separate owner-approved restricted Customer Draft Releases schema and writer ACL must be reviewed before enabling customer actions",
+  "deploymentGates": [
+    "independent schema and provisioner review",
+    "exact List absence and empty-state preflight",
+    "action-time approval for List creation, unique indexes, and access changes",
+    "persisted field, uniqueness, effective-rights, and sharing-link readback",
+    "selected-only delegated Graph GET and POST canaries for each named release owner and coordinator",
+    "two-user same-key race and uncertain-write recovery canaries",
+    "migration of occupied pilot draft keys before buttons unlock",
+    "legacy SentAttempt 201 and owner-created readback before one Sent POST; ambiguous marker or Sent outcome must hold without browser retry"
+  ]
+}
