@@ -8,6 +8,8 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const manifest = JSON.parse(readFileSync(join(root, 'HELD_BUILD_MANIFEST.json'), 'utf8'));
 const source = join(root, manifest.sourcePackage);
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
+// Vite's Windows build can duplicate a CR before an injected newline.
+const canonical = bytes => Buffer.from(bytes.toString('utf8').replace(/\r+\n/gu, '\n'));
 
 assert.equal(manifest.schema, 'arbys-gantt-held-build/v1');
 assert.equal(manifest.integrationEnabled, false);
@@ -15,8 +17,7 @@ assert.equal(manifest.integrationEnabled, false);
 for (const [relativePath, expected] of Object.entries(manifest.sha256)) {
   const bytes = readFileSync(join(root, relativePath));
   // Git on Windows can check text out with CRLF; Pages serves the LF blob.
-  const canonical = Buffer.from(bytes.toString('utf8').replace(/\r\n/gu, '\n'));
-  const actual = sha256(canonical);
+  const actual = sha256(canonical(bytes));
   assert.equal(actual, expected, `${relativePath} differs from the reviewed build`);
 }
 
@@ -54,10 +55,10 @@ for (const id of ['signInAction', 'verifyAction', 'providerDraftAction',
   assert.ok(new RegExp(`<button id="${id}"[^>]*\\bdisabled\\b`, 'u').test(html),
     `${id} must be checked in disabled`);
 }
-assert.ok(html.includes('/arbys-coordinator-gantt/assets/app-CgMq8WlM.js'));
+assert.ok(html.includes('/arbys-coordinator-gantt/assets/app-9Oeg0XSI.js'));
 assert.ok(html.includes('sandbox="allow-scripts allow-popups'));
 
-for (const filename of ['app-CgMq8WlM.js', 'Configuration-B1Fwyfg7.js',
+for (const filename of ['app-9Oeg0XSI.js', 'Configuration-B1Fwyfg7.js',
   'redirect-Ck1ZdWvy.js']) {
   const bundle = readFileSync(join(root, 'assets', filename), 'utf8');
   assert.ok(!/Mail\.Send\b/iu.test(bundle),
@@ -74,7 +75,7 @@ const dist = join(source, 'dist');
 if (existsSync(dist)) {
   for (const relativePath of Object.keys(manifest.sha256).filter(
     path => path !== 'data/gantt.enc.json')) {
-    assert.equal(sha256(readFileSync(join(dist, relativePath))),
+    assert.equal(sha256(canonical(readFileSync(join(dist, relativePath)))),
       manifest.sha256[relativePath],
       `rebuilt ${relativePath} does not match the pinned root artifact`);
   }

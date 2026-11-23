@@ -14,6 +14,7 @@ const itemPost = /^\/v1\.0\/sites\/[^/]+\/lists\/[0-9a-f-]{36}\/items$/i;
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SENT_SCAN_PAGE_SIZE = 25;
 const SENT_SCAN_MAX_PAGES = 20;
+const SENT_SCAN_LOOKBACK_MS = 5 * 60 * 1000;
 const SENT_SCAN_SELECT = 'id,internetMessageHeaders,sentDateTime';
 const SENT_SCAN_ORDER = 'sentDateTime desc';
 const SENT_SCAN_PATH = '/v1.0/me/mailFolders/sentitems/messages';
@@ -149,7 +150,12 @@ export class GraphClient {
         new Date(claimedAtUtc).toISOString() !== claimedAtUtc) {
       throw new HeldActionError('SENT_SCAN_INPUT_INVALID');
     }
-    const filter = `sentDateTime ge ${claimedAtUtc}`;
+    const lowerBoundEpoch = Date.parse(claimedAtUtc) - SENT_SCAN_LOOKBACK_MS;
+    const lowerBound = new Date(lowerBoundEpoch).toISOString();
+    if (!/^\d{4}-/.test(lowerBound)) {
+      throw new HeldActionError('SENT_SCAN_INPUT_INVALID');
+    }
+    const filter = `sentDateTime ge ${lowerBound}`;
     const parameters = new URLSearchParams({
       '$select': SENT_SCAN_SELECT, '$filter': filter,
       '$orderby': SENT_SCAN_ORDER, '$top': String(SENT_SCAN_PAGE_SIZE),
@@ -170,10 +176,11 @@ export class GraphClient {
         throw new HeldActionError('SENT_SCAN_INCOMPLETE');
       }
       for (const item of data.value) {
+        const sentEpoch = Date.parse(item?.sentDateTime ?? '');
         if (typeof item?.id !== 'string' || item.id.length < 8 ||
             item.id.length > 2048 ||
             !Array.isArray(item.internetMessageHeaders) ||
-            !Number.isFinite(Date.parse(item.sentDateTime ?? ''))) {
+            !Number.isFinite(sentEpoch) || sentEpoch < lowerBoundEpoch) {
           throw new HeldActionError('SENT_SCAN_INCOMPLETE');
         }
         if (correlationIdOf(item) === correlationId) matches.add(item.id);

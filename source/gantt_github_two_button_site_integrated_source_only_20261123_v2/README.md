@@ -42,6 +42,14 @@ from making a second first draft while the Sent state is unresolved. A
 closed GitHub page has no background listener and cannot record the send at
 the instant Outlook sends it.
 
+If the saved draft immutable ID returns 404 after a coordinator sends it in
+Outlook, the draft owner can make one bounded Sent Items reconciliation from
+five minutes before the shared Claim time. Only a unique copy with the exact
+opaque draft correlation header is considered; the full Sent message must then
+pass the normal folder, recipient, body, link, and Internet message ID checks.
+An incomplete scan or unmatched header leaves the Claim occupied and the
+result unresolved. This held source does not create another draft as recovery.
+
 `src/compose_site.mjs` injects **all three** snapshot provider operations
 (`preview`, `draft`, `checkSent`) into the parent adapter. It never combines a
 snapshot preview with lean V3's strict WO/Contacts writer. Lean V3 handles
