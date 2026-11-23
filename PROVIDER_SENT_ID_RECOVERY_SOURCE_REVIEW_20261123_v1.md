@@ -1,5 +1,9 @@
 # Provider snapshot Sent ID recovery — local source review
 
+This records the provider source stage before the combined held bundle was
+repinned. See `COMBINED_SENT_RECOVERY_HELD_REVIEW_20261123_v1.md` for the final
+local artifact and verification receipts.
+
 **Scope:** The snapshot provider writer only. This branch combines the lean
 Sent Items scan from the local recovery branch with a provider-specific
 fallback. It is a held source change; no cloud List, Outlook, or GitHub write

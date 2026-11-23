@@ -1,5 +1,9 @@
 # Held Outlook Sent ID recovery — source review
 
+This records the earlier lean-only build. The final held bundle also includes
+the provider snapshot recovery and is pinned in
+`COMBINED_SENT_RECOVERY_HELD_REVIEW_20261123_v1.md`.
+
 **Status:** Local held-source branch codex/gantt-sent-recovery-source-20261123, based on Draft PR #2 head fe737ba. The rebuilt GitHub site artifacts are pinned locally with all five action controls disabled. No GitHub push, List write, Outlook read, draft, or email. The public Gantt remains unchanged.
 
 ## Why this branch exists
