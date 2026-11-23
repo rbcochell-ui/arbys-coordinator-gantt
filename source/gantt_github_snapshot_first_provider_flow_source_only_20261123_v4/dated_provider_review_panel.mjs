@@ -30,12 +30,12 @@ function exactThirstyUrl(value, id) {
 function recipientCopy(preview) {
   if (preview.recipientSuggestion !== 'exact_saved_file_pair' ||
       !Array.isArray(preview.to) || preview.to.length === 0) {
-    return 'No exact contact pair in this dated snapshot. The Outlook draft To will be blank. Enter and verify the installation manager and planner before Send.';
+    return 'No exact contact pair in this dated snapshot. A new draft stays held until both contacts match the protected work-order and contact records.';
   }
   if (preview.to.length === 1) {
-    return 'Dated suggestion: one mailbox covers both contact roles. Verify it in Outlook before Send.';
+    return 'The dated snapshot lists one mailbox for both roles. A new draft stays held until two distinct verified contacts are available.';
   }
-  return 'Dated installation manager and planner suggestions are shown in the draft. Verify both in Outlook before Send.';
+  return 'The dated snapshot suggests an installation manager and planner. A new draft requires a matching protected work-order and contact read; verify both recipients in Outlook before Send.';
 }
 
 /**

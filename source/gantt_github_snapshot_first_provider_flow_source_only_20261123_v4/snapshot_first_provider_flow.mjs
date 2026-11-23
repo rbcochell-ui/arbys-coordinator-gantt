@@ -214,6 +214,71 @@ function pairFor(source, facts) {
   }
   return Object.freeze({manager, planner, to: Object.freeze(unique)});
 }
+function numericIdentity(value) {
+  if (typeof value !== 'string' || !/^[0-9]+$/u.test(value) ||
+      /^0+$/u.test(value)) return null;
+  return value.replace(/^0+(?=[0-9])/u, '');
+}
+function serviceTypeCode(value) {
+  return typeof value === 'string' ?
+    /^([A-Z0-9]{1,3})(?:\s*-\s*|$)/iu.exec(value)?.[1]?.toUpperCase() ?? null :
+    null;
+}
+function exactJoinReceipt(result, c, pair, nowMs) {
+  const wo = c.facts.wo;
+  const overlayWo = c.facts.overlay.rows?.[c.source.id];
+  const chartAcn = numericIdentity(wo.acn);
+  const chartStore = numericIdentity(wo.woStore);
+  const chartServiceCode = serviceTypeCode(wo.serviceType);
+  const protectedAcn = numericIdentity(result?.outletAcn);
+  const protectedStore = numericIdentity(result?.storeNumber);
+  if (!object(result) || result.nativeWoId !== c.source.id ||
+      !chartAcn || !chartStore || chartAcn !== protectedAcn ||
+      chartStore !== protectedStore ||
+      c.source.visitKind !== 'Installation' ||
+      result.normalizedVisitKind !== 'Install' ||
+      result.workOrderType !== wo.type ||
+      result.workOrderType !== overlayWo?.workOrderType ||
+      !chartServiceCode ||
+      chartServiceCode !== serviceTypeCode(overlayWo?.serviceType) ||
+      result.serviceTypeCode !== chartServiceCode ||
+      result.agentCode !== c.source.agentCode ||
+      result.agentCode !== wo.assignedSpAgentCode ||
+      result.woNumber !== c.source.woNumber ||
+      result.woNumber !== wo.number ||
+      result.workOrderStatus !== c.facts.datedPhase ||
+      result.recipientReviewRequired !== false ||
+      !Array.isArray(result.to) || result.to.length !== 2 ||
+      JSON.stringify(result.to) !== JSON.stringify(pair.to) ||
+      !SHA.test(result.digest ?? '') ||
+      typeof result.etagsJson !== 'string' ||
+      !Number.isFinite(result.validUntilMs) ||
+      result.validUntilMs <= nowMs) {
+    fail('PROTECTED_PROVIDER_JOIN_MISMATCH');
+  }
+  let etags;
+  try { etags = JSON.parse(result.etagsJson); }
+  catch { fail('PROTECTED_PROVIDER_JOIN_MISMATCH'); }
+  if (!object(etags) || !object(etags.wo) || !object(etags.contact) ||
+      !/^[1-9][0-9]*$/u.test(etags.wo.itemId ?? '') ||
+      !/^[1-9][0-9]*$/u.test(etags.contact.itemId ?? '') ||
+      typeof etags.wo.etag !== 'string' || !etags.wo.etag ||
+      typeof etags.contact.etag !== 'string' || !etags.contact.etag) {
+    fail('PROTECTED_PROVIDER_JOIN_MISMATCH');
+  }
+  const protectedObserved = utcMs(result.observedAtUtc,
+    'PROTECTED_WO_OBSERVATION_INVALID');
+  const chartObserved = utcMs(c.source.sourceAsOfUtc,
+    'PROTECTED_WO_OBSERVATION_INVALID');
+  // SharePoint's DateTime field is minute precision. One minute accommodates
+  // that rounding, but an older protected WO cannot authorize chart contacts.
+  if (protectedObserved + 60_000 < chartObserved) {
+    fail('PROTECTED_WO_OLDER_THAN_CHART');
+  }
+  return Object.freeze({binding: JSON.stringify([result.digest,
+    result.etagsJson, result.observedAtUtc]),
+    validUntilMs: Math.min(c.validUntilMs, result.validUntilMs)});
+}
 function eligible(source, facts) {
   if (source.eligibility !== 'preinstall_snapshot_candidate' ||
       source.draftSuggestionAllowed !== true ||
@@ -223,6 +288,12 @@ function eligible(source, facts) {
   }
   if (facts.scopeClass === 'known_other') {
     fail('VISIT_SCOPE_EXCLUDED');
+  }
+  // The protected WO reader currently attests Install only. A code-8 chart
+  // visit cannot become a first draft until its Relocation classification is
+  // independently represented and reviewed in that protected source.
+  if (source.visitKind === 'Relocation') {
+    fail('PROTECTED_RELOCATION_CLASSIFICATION_UNREVIEWED');
   }
   if (typeof source.woNumber !== 'string' ||
       typeof source.agentCode !== 'string' ||
@@ -268,7 +339,7 @@ function occupiedDatedPreview(id, state) {
 export function createSnapshotFirstProviderFlow({enabled = false,
     releaseReader = null, loadAuthenticatedChart = null,
     ownerOids = null, getActor = null, selectionPort = null,
-    actionPort = null,
+    actionPort = null, exactJoinPort = null,
     now = () => Date.now()} = {}) {
   if (typeof now !== 'function') throw new TypeError('Clock function required');
   const sourceConfigured = releaseReader instanceof GanttReleaseReader &&
@@ -276,6 +347,7 @@ export function createSnapshotFirstProviderFlow({enabled = false,
     Array.isArray(ownerOids) && ownerOids.length > 0 &&
     ownerOids.every(id => typeof id === 'string' && GUID.test(id));
   if (enabled === true && (!sourceConfigured ||
+      typeof exactJoinPort?.resolve !== 'function' ||
       typeof getActor !== 'function' ||
       typeof selectionPort?.capture !== 'function' ||
       typeof selectionPort?.isCurrent !== 'function' ||
@@ -323,6 +395,13 @@ export function createSnapshotFirstProviderFlow({enabled = false,
   }
 
   async function actor() { return actorOf(await getActor()); }
+  async function joined(c, pair, user) {
+    if (typeof exactJoinPort?.resolve !== 'function') {
+      fail('PROTECTED_PROVIDER_JOIN_UNCONFIGURED');
+    }
+    const result = await exactJoinPort.resolve(c.source.id, user);
+    return exactJoinReceipt(result, c, pair, now());
+  }
   async function observe(key, user) {
     const state = await actionPort.observe(key, user);
     if (!object(state) || !OBSERVED.has(state.status) ||
@@ -354,10 +433,14 @@ export function createSnapshotFirstProviderFlow({enabled = false,
       }
       const scopeExcluded = c.source.eligibility ===
         'preinstall_snapshot_candidate' && c.facts.scopeClass === 'known_other';
+      const relocationHeld = c.source.eligibility ===
+        'preinstall_snapshot_candidate' && c.source.visitKind === 'Relocation';
       return Object.freeze({kind: 'provider', id: c.source.id,
-        eligibility: scopeExcluded ? 'scope_excluded' : c.source.eligibility,
+        eligibility: scopeExcluded ? 'scope_excluded' :
+          relocationHeld ? 'relocation_review' : c.source.eligibility,
         reasonCode: scopeExcluded ? 'VISIT_SCOPE_EXCLUDED' :
-          c.source.reasonCode,
+          relocationHeld ? 'PROTECTED_RELOCATION_CLASSIFICATION_UNREVIEWED' :
+            c.source.reasonCode,
         scopeClass: c.facts.scopeClass,
         sourceAsOfUtc: c.source.sourceAsOfUtc,
         chartSnapshotAsOfDate: c.source.chartSnapshotAsOfDate,
@@ -382,7 +465,8 @@ export function createSnapshotFirstProviderFlow({enabled = false,
       }
       const c = await readSource(id);
       eligible(c.source, c.facts);
-      pairFor(c.source, c.facts);
+      const pair = pairFor(c.source, c.facts);
+      const join = await joined(c, pair, user);
       // An eligible parent result must not arm the button before its dated
       // source, scope warning and Thirsty link are visible in the parent.
       await selectionPort.ensureReady(c.source.id);
@@ -397,7 +481,7 @@ export function createSnapshotFirstProviderFlow({enabled = false,
         scopeReviewRequired: c.facts.scopeClass !== 'fountain',
         to: c.source.to, cc: [],
         recipientReviewRequired: true, webLink: null,
-        validUntilUtc: new Date(c.validUntilMs).toISOString()});
+        validUntilUtc: new Date(join.validUntilMs).toISOString()});
     },
     async draft(nativeWoId) {
       if (enabled !== true) fail('SNAPSHOT_PROVIDER_DRAFTS_DISABLED');
@@ -419,6 +503,7 @@ export function createSnapshotFirstProviderFlow({enabled = false,
         const first = await readSource(id);
         eligible(first.source, first.facts);
         const pair = pairFor(first.source, first.facts);
+        const firstJoin = await joined(first, pair, user);
         await selectionPort.ensureReady(id);
         currentSelection(selectionPort, selection, id);
         // This is an unsent Outlook draft. The coordinator checks current
@@ -426,7 +511,11 @@ export function createSnapshotFirstProviderFlow({enabled = false,
         // No second modal or confirmation click is required here.
         const latest = await readSource(id);
         eligible(latest.source, latest.facts);
-        pairFor(latest.source, latest.facts);
+        const latestPair = pairFor(latest.source, latest.facts);
+        const latestJoin = await joined(latest, latestPair, user);
+        if (latestJoin.binding !== firstJoin.binding) {
+          fail('PROTECTED_PROVIDER_JOIN_CHANGED');
+        }
         if (latest.binding !== first.binding ||
             latest.facts.datedPhase !== first.facts.datedPhase) {
           fail('GANTT_RELEASE_CHANGED_BEFORE_CLAIM');
@@ -448,7 +537,11 @@ export function createSnapshotFirstProviderFlow({enabled = false,
           currentSelection(selectionPort, selection, id);
           const post = await readSource(id);
           eligible(post.source, post.facts);
-          pairFor(post.source, post.facts);
+          const postPair = pairFor(post.source, post.facts);
+          const postJoin = await joined(post, postPair, user);
+          if (postJoin.binding !== firstJoin.binding) {
+            fail('PROTECTED_PROVIDER_JOIN_CHANGED');
+          }
           const postActor = await actor();
           if (postActor.id !== user.id || postActor.address !== user.address) {
             fail('COORDINATOR_CHANGED');
@@ -460,7 +553,10 @@ export function createSnapshotFirstProviderFlow({enabled = false,
           return Object.freeze({releaseItemId: post.release.id,
             releaseETag: post.release.etag,
             decryptedHtmlSha256: post.release.fields.DecryptedHtmlSha256,
-            validUntilUtc: new Date(post.validUntilMs).toISOString()});
+            exactJoinBinding: postJoin.binding,
+            validUntilUtc: new Date(Math.min(firstJoin.validUntilMs,
+              latestJoin.validUntilMs,
+              postJoin.validUntilMs)).toISOString()});
         };
         const result = await actionPort.createFirstDraft(Object.freeze({
           dispatchKey: key, nativeWoId: id, actor: user,
@@ -468,6 +564,7 @@ export function createSnapshotFirstProviderFlow({enabled = false,
           scopeClass: first.facts.scopeClass,
           recipientSuggestion: first.source.recipientSuggestion,
           datedPhase: first.facts.datedPhase, content,
+          exactJoinBinding: firstJoin.binding,
           verifySourceAfterClaim,
         }));
         if (afterClaimCalls === 0) {

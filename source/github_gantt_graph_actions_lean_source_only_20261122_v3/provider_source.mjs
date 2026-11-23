@@ -215,7 +215,11 @@ export class ProviderSourceResolver {
     });
     const digest = await sha256Hex(canonical({wo, contact, contactKey}));
     return Object.freeze({nativeWoId: id, woNumber: w.WorkOrderNumber,
-      storeNumber: w.StoreNumber, workOrderStatus: w.WorkOrderStatus,
+      storeNumber: w.StoreNumber, outletAcn: w.OutletACN,
+      normalizedVisitKind: w.NormalizedVisitKind,
+      workOrderType: w.WorkOrderType,
+      serviceTypeCode: w.ServiceTypeCode,
+      workOrderStatus: w.WorkOrderStatus,
       thirstyOwner: w.ThirstyOwnerFullName || null,
       agentCode: w.AssignedAgentCode, to: Object.freeze(to),
       recipientReviewRequired: to.length === 0, digest,

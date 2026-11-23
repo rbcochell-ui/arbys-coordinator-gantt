@@ -30,6 +30,8 @@ import {createSnapshotFirstProviderFlow} from
   '../../gantt_github_snapshot_first_provider_flow_source_only_20261123_v4/snapshot_first_provider_flow.mjs';
 import {SnapshotProviderActionWriter} from
   '../../gantt_github_snapshot_first_provider_flow_source_only_20261123_v4/snapshot_provider_writer.mjs';
+import {ProviderSourceResolver} from
+  '../../github_gantt_graph_actions_lean_source_only_20261122_v3/provider_source.mjs';
 import {createV2ParentAdapter} from
   '../../gantt_github_snapshot_first_provider_flow_source_only_20261123_v4/snapshot_parent_adapter.mjs';
 import {createDatedProviderReviewPanel} from
@@ -63,10 +65,15 @@ export function validateIntegrationConfig(config) {
   const auth = validateAuthConfig(config.auth);
   try { assertActiveConfig(config.lean, 'customer'); }
   catch { fail('CUSTOMER_RUNTIME_NOT_RELEASED'); }
+  // The snapshot provider route reads these protected Lists through the lean
+  // resolver even though the lean provider writer itself remains disabled.
+  try { assertActiveConfig({...config.lean, providerEnabled: true}, 'provider'); }
+  catch { fail('PROTECTED_PROVIDER_READ_CONFIG_INCOMPLETE'); }
   const lean = config.lean;
   const snapshot = config.snapshot;
   const legacy = config.legacyInventory;
-  const ids = [snapshot.lists?.ganttRelease, lean.lists?.customerReleases,
+  const ids = [snapshot.lists?.ganttRelease, lean.lists?.woSource,
+    lean.lists?.verifiedContacts, lean.lists?.customerReleases,
     lean.lists?.claims, lean.lists?.receipts];
   if (lean.providerEnabled !== false || lean.customerEnabled !== true ||
       snapshot.providerSnapshotEnabled !== true ||
@@ -163,6 +170,11 @@ export async function prepareIntegratedSite({config, loadAuthenticatedChart,
     listId: config.snapshot.lists.ganttRelease,
     siteUrl: config.releaseSiteUrl,
     payloadUrl: config.encryptedPayloadUrl});
+  // Each call pins the coordinator's current account, then independently
+  // rereads the protected WO and Verified Contacts Lists by exact key/ETag.
+  const exactJoinPort = Object.freeze({resolve: (id, actor) =>
+    new ProviderSourceResolver({graph: graph.bindAccount(),
+      config: config.lean, now}).resolve(id, actor)});
   let providerFlow = null;
   const panel = createDatedProviderReviewPanel({elements: panelElements,
     loadSnapshotPreview: id => providerFlow.snapshotPreview(id)});
@@ -170,7 +182,8 @@ export async function prepareIntegratedSite({config, loadAuthenticatedChart,
     releaseReader, loadAuthenticatedChart,
     ownerOids: config.snapshot.releaseOwnerOids,
     getActor: () => graph.bindAccount().getMe(),
-    selectionPort: panel.selectionPort, actionPort: writer, now});
+    selectionPort: panel.selectionPort, actionPort: writer,
+    exactJoinPort, now});
   const base = createV2ParentAdapter({enabled: true,
     actions: customerActions, providerFlow,
     signIn: () => auth.signInFromClick()});

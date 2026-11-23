@@ -20,6 +20,8 @@ const OWNER = '33333333-3333-4333-8333-333333333333';
 const COORDINATOR = '44444444-4444-4444-8444-444444444444';
 const SITE_ID = 'groups.coca-cola.com,55555555-5555-4555-8555-555555555555,66666666-6666-4666-8666-666666666666';
 const LISTS = {customerReleases: '77777777-7777-4777-8777-777777777777',
+  woSource: '11111111-aaaa-4aaa-8aaa-111111111111',
+  verifiedContacts: '22222222-bbbb-4bbb-8bbb-222222222222',
   claims: '88888888-8888-4888-8888-888888888888',
   receipts: '99999999-9999-4999-8999-999999999999',
   ganttRelease: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'};
@@ -36,8 +38,14 @@ function inventedConfig() {
     releaseOwnerOids: [OWNER],
     approvedCustomerReleaseKinds: ['InventedCustomerRelease/v1'],
     occupiedPilotClaimsMigrated: true, providerEnabled: false,
-    customerEnabled: true});
-  Object.assign(config.lean.lists, {customerReleases: LISTS.customerReleases,
+    customerEnabled: true,
+    eligibleRawSpStatuses: [],
+    eligibleWorkOrderStatuses: ['Pending Readiness'],
+    eligibleServiceTypeCodes: ['A'],
+    eligibleWorkOrderTypes: ['Installation']});
+  Object.assign(config.lean.lists, {woSource: LISTS.woSource,
+    verifiedContacts: LISTS.verifiedContacts,
+    customerReleases: LISTS.customerReleases,
     claims: LISTS.claims, receipts: LISTS.receipts});
   Object.assign(config.snapshot, {enabled: true,
     providerSnapshotEnabled: true, siteId: SITE_ID,
@@ -126,9 +134,12 @@ test('active bindings require one identity, one unique List pair and exact Pages
   assert.equal(validateIntegrationConfig(good).payloadUrl, PAYLOAD_URL);
   for (const mutate of [
     c => { c.snapshot.lists.claims = LISTS.receipts; },
+    c => { c.lean.lists.verifiedContacts = LISTS.woSource; },
     c => { c.auth.coordinatorOids = [OWNER]; },
     c => { c.encryptedPayloadUrl = 'https://example.invalid/chart.json'; },
     c => { c.lean.providerEnabled = true; },
+    c => { c.lean.eligibleWorkOrderTypes = []; },
+    c => { c.lean.eligibleServiceTypeCodes = []; },
     c => { c.snapshot.emptyToDraftCanaryPassed = null; },
     c => { c.lean.customerEnabled = false; },
     c => { c.legacyInventory = null; },

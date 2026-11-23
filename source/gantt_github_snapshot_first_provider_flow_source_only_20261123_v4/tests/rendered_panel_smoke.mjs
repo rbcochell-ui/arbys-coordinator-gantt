@@ -78,7 +78,7 @@ window.__panel=panel;window.__id=id;`);
   await page.locator('#signIn').click();
   await page.locator('#thirstyLink').waitFor({state: 'visible'});
   assert.match(await page.locator('#sourceAsOf').textContent(), /2026-11-22/);
-  assert.match(await page.locator('#recipientWarning').textContent(), /To will be blank/);
+  assert.match(await page.locator('#recipientWarning').textContent(), /A new draft stays held/);
   assert.match(await page.locator('#reviewWarning').textContent(), /Outlook before Send/);
   assert.equal(await page.locator('#thirstyLink').getAttribute('href'),
     'https://hubit.my.salesforce.com/lightning/r/WorkOrder/0WO123456789012345/view');
@@ -102,7 +102,7 @@ window.__panel=panel;window.__id=id;`);
   assert.equal(await page.locator('#thirstyLink').getAttribute('href'), null);
   assert.deepEqual(outside, []);
   assert.deepEqual(errors, []);
-  console.log('Isolated Edge dated-panel smoke passed: signed-in preview, empty-To warning, existing-draft fallback, exact link, mobile width, selection clear, no external requests.');
+  console.log('Isolated Edge dated-panel smoke passed: signed-in preview, held first-draft warning, existing-draft fallback, exact link, mobile width, selection clear, no external requests.');
 } finally {
   if (browser) await browser.close();
   if (server) await new Promise(done => server.close(done));

@@ -78,7 +78,7 @@ test('parent preview waits until the dated panel is visibly ready', async () => 
   assert.equal(e.thirstyLink.href, THIRSTY);
 });
 
-test('missing contact suggestion is visibly empty-To and selection clears readiness', async () => {
+test('missing contact suggestion says first draft is held and selection clears readiness', async () => {
   const e = elements();
   const panel = createDatedProviderReviewPanel({elements: e,
     loadSnapshotPreview: async id => preview(id,
@@ -86,7 +86,7 @@ test('missing contact suggestion is visibly empty-To and selection clears readin
   panel.onSignedIn();
   panel.onSelection({kind: 'provider', id: WO});
   await flush();
-  assert.match(e.recipientWarning.textContent, /To will be blank/);
+  assert.match(e.recipientWarning.textContent, /A new draft stays held/);
   const token = panel.selectionPort.capture(WO);
   panel.onSelection(null);
   assert.equal(e.panel.hidden, true);

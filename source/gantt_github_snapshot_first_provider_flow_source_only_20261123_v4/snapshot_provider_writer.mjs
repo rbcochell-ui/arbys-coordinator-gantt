@@ -135,14 +135,15 @@ function sourceForClaim(command) {
       !['fountain', 'unknown'].includes(command.scopeClass) ||
       command.source.scopeClass !== command.scopeClass ||
       !['Installation', 'Relocation'].includes(command.source.visitKind) ||
+      typeof command.exactJoinBinding !== 'string' ||
+      !command.exactJoinBinding ||
       command.recipientSuggestion !== command.source.recipientSuggestion ||
       command.dispatchKey !== providerDispatchKey(command.nativeWoId)) {
     fail('SNAPSHOT_DRAFT_COMMAND_INVALID');
   }
   const to = validTo(command.source.to);
-  if ((command.recipientSuggestion === 'none' && to.length !== 0) ||
-      (command.recipientSuggestion === 'exact_saved_file_pair' &&
-        ![1, 2].includes(to.length))) {
+  if (command.recipientSuggestion !== 'exact_saved_file_pair' ||
+      to.length !== 2) {
     fail('SNAPSHOT_DRAFT_COMMAND_INVALID');
   }
   const expected = buildSnapshotProviderContent(command.source, {to});
@@ -332,6 +333,7 @@ export class SnapshotProviderActionWriter {
         String(command.release.id) || post.releaseETag !== command.release.etag ||
         post.decryptedHtmlSha256 !==
           command.release.fields.DecryptedHtmlSha256 ||
+        post.exactJoinBinding !== command.exactJoinBinding ||
         !Number.isFinite(Date.parse(post.validUntilUtc ?? '')) ||
         this.now() >= Date.parse(post.validUntilUtc)) {
       fail('SNAPSHOT_SOURCE_CHANGED_AFTER_CLAIM');
