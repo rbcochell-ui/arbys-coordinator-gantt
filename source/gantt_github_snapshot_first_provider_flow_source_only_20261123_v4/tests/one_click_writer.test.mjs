@@ -204,9 +204,18 @@ class FakeGraph {
     if (parts[6] === 'columns') return {status: 200, data: {
       value: release ? releaseColumns() :
         (listId === LISTS.claims ? CLAIM_COLUMNS : RECEIPT_COLUMNS)
-          .map(name => ({name, required: name === key,
-            indexed: name === key, enforceUniqueValues: name === key,
-            text: {}}))}};
+          .map(name => name === 'Kind' && listId === LISTS.receipts
+            ? {name, required: true, indexed: false,
+              enforceUniqueValues: false,
+              choice: {allowTextEntry: false,
+                choices: ['Draft', 'SentAttempt', 'Sent']}}
+            : name === 'PlannedSentSha256' && listId === LISTS.receipts
+              ? {name, required: false, indexed: false,
+                enforceUniqueValues: false,
+                text: {maxLength: 64, allowMultipleLines: false}}
+              : {name, required: name === key,
+                indexed: name === key, enforceUniqueValues: name === key,
+                text: {}})}};
     assert.equal(parts[6], 'items');
     if (parts[7]) {
       const row = rows.find(value => value.id === parts[7]);

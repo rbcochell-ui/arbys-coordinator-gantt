@@ -7,6 +7,8 @@ import {createLinkageVerificationPort} from
   '../../gantt_linkage_read_adapter_source_only_v1/linkage_read_adapter.mjs';
 import {createSnapshotFirstProviderFlow} from
   '../snapshot_first_provider_flow.mjs';
+import {createV2ParentAdapter} from
+  '../../gantt_github_snapshot_first_provider_flow_source_only_20261123_v4/snapshot_parent_adapter.mjs';
 import {RUNTIME_CONFIG} from '../runtime_config.mjs';
 
 function sf18(base) {
@@ -219,6 +221,55 @@ test('preview uses minimum V4 and owner-approval expiry without an action', asyn
   assert.equal(preview.validUntilUtc, LINK_UNTIL_ISO);
   assert.deepEqual(h.counts(), {evidenceReads: 1, approvalReads: 1});
   assert.equal(h.actionPort.createCalls, 0);
+});
+
+test('shared unverified Sent record stays occupied without a second draft', async () => {
+  const h = harness();
+  h.actionPort.state = 'sent_recorded_unverified';
+  const dated = await h.flow.snapshotPreview(WO);
+  assert.equal(dated.existingStatus, 'sent_recorded_unverified');
+  assert.equal(dated.canDraft, false);
+  const preview = await h.flow.preview(WO);
+  assert.equal(preview.status, 'sent_recorded_unverified');
+  assert.deepEqual(preview.to, []);
+  const resumed = await h.flow.draft(WO);
+  assert.equal(resumed.status, 'sent_recorded_unverified');
+  assert.equal(h.actionPort.createCalls, 0);
+  assert.equal(h.actionPort.resumeCalls, 1);
+  assert.deepEqual(h.counts(), {evidenceReads: 0, approvalReads: 0});
+});
+
+test('V5 and reviewed V4 parent adapter hold a shared unverified Sent row', async () => {
+  const h = harness();
+  h.actionPort.state = 'sent_recorded_unverified';
+  const adapter = createV2ParentAdapter({enabled: true,
+    providerFlow: h.flow, signIn: async () => {},
+    actions: {preview: async () => { throw new Error('customer unused'); },
+      customerDraft: async () => { throw new Error('customer unused'); },
+      checkCustomerSent: async () => { throw new Error('customer unused'); }}});
+  await adapter.signInFromClick();
+  const preview = await adapter.preview('provider', WO);
+  assert.equal(preview.status, 'sent_recorded_unverified');
+  assert.equal(preview.canDraft, false);
+  const result = await adapter.createOrOpenProviderDraft(WO);
+  assert.deepEqual(result, {state: 'held',
+    reason: 'SHARED_SENT_RECORD_UNVERIFIED'});
+  assert.equal(h.actionPort.createCalls, 0);
+  assert.deepEqual(h.counts(), {evidenceReads: 0, approvalReads: 0});
+});
+
+test('historical occupied draft can resume only through owner recovery', async () => {
+  const h = harness();
+  h.actionPort.state = 'legacy_occupied';
+  h.actionPort.resume = async () => {
+    h.actionPort.resumeCalls++;
+    return {status: 'legacy_draft_review_required'};
+  };
+  const result = await h.flow.draft(WO);
+  assert.equal(result.status, 'legacy_draft_review_required');
+  assert.equal(h.actionPort.createCalls, 0);
+  assert.equal(h.actionPort.resumeCalls, 1);
+  assert.deepEqual(h.counts(), {evidenceReads: 0, approvalReads: 0});
 });
 
 test('absent reviewed evidence holds read-only panel and action preflight', async () => {
