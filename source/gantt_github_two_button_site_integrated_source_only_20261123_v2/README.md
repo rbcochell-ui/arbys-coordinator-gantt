@@ -73,9 +73,12 @@ variant to exercise both draft buttons, return-to-Gantt Sent checks, an
 occupied key owned by another coordinator, and manual Check Sent. It verifies
 selection alone makes no draft call, invalid selection and iframe reload
 clear action eligibility, mobile width, and zero external requests. The fake
-variant is removed after the test and is not present in `dist`. Provider V4's separate
-29/29 suite and Edge smoke verify its Release, Claim, six-link draft,
-cross-action privacy, reopening, and Sent behavior using invented data.
+variant is removed after the test and is not present in `dist`. The vendored
+provider V4 suite passes 31/31 tests, including a Claim appearing between the
+caller and writer reads, and a rejected draft result that skips post-Claim
+verification. Its tests verify Release, Claim, six-link draft,
+cross-action privacy, reopening, and Sent behavior using invented data. Its
+separate Edge dated-panel smoke also passes.
 These are local tests, not live tenant or mailbox evidence.
 
 The built `dist/` contains an app page, the redirect bridge, and JS assets;

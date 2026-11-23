@@ -467,7 +467,26 @@ export function createSnapshotFirstProviderFlow({enabled = false,
           datedPhase: first.facts.datedPhase, content,
           verifySourceAfterClaim,
         }));
-        if (afterClaimCalls !== 1) fail('POSTCLAIM_RECHECK_MISSING');
+        if (afterClaimCalls === 0) {
+          if (result?.reusedExistingClaim !== true) {
+            fail('POSTCLAIM_RECHECK_MISSING');
+          }
+          // Re-read the physical key: the writer saw a Claim created between
+          // the caller's observe and its own read, so it made no new Claim.
+          const occupied = await observe(key, user);
+          if (occupied.status === 'absent') fail('RACED_CLAIM_UNVERIFIED');
+          const resumed = writerResult(await actionPort.resume(key, user));
+          if (resumed.status === 'not_started' ||
+              resumed.dispatchKey !== key) fail('RACED_CLAIM_UNVERIFIED');
+          const resumedActor = await actor();
+          if (resumedActor.id !== user.id ||
+              resumedActor.address !== user.address) fail('COORDINATOR_CHANGED');
+          currentSelection(selectionPort, selection, id);
+          return resumed;
+        }
+        if (afterClaimCalls !== 1 || result?.reusedExistingClaim === true) {
+          fail('POSTCLAIM_RECHECK_MISSING');
+        }
         currentSelection(selectionPort, selection, id);
         return writerResult(result);
       } finally { inFlight.delete(id); }

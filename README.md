@@ -19,4 +19,6 @@ npm run smoke
 
 Then run `node scripts/verify-held-candidate.mjs` from the repository root. The verifier checks the pinned root files, unchanged encrypted chart asset, disabled runtime configuration, disabled buttons, restrictive CSP, and rebuilt output when `dist/` is present. `HELD_BUILD_MANIFEST.json` records the exact candidate hashes. The smoke uses only an invented encrypted chart on loopback and makes no external requests.
 
+The vendored snapshot provider has its own regression suite. Run `npm ci`, `npm test`, and `npm run smoke` from `source/gantt_github_snapshot_first_provider_flow_source_only_20261123_v4` to exercise the unique Claim, editable draft, Sent receipt, concurrent-Claim recovery, and dated panel with invented data.
+
 This candidate is a local review branch. Enabling the buttons requires a separate reviewed release with Entra app registration, delegated access, restricted Lists, a fresh owner-approved Gantt Release, migrated occupied draft keys, and tenant/mailbox canaries. The source package's [integration README](source/gantt_github_two_button_site_integrated_source_only_20261123_v2/README.md) lists those gates in detail.

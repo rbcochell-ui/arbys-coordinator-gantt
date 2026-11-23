@@ -269,7 +269,12 @@ export class SnapshotProviderActionWriter {
       fail('SNAPSHOT_RELEASE_LIST_MISMATCH');
     }
     const before = await context.store.getState(command.dispatchKey);
-    if (before) return this._existing(before, context);
+    if (before) {
+      // A different coordinator may have claimed the key after the caller's
+      // last observe. No new Claim or draft belongs to this attempt.
+      const existing = await this._existing(before, context);
+      return Object.freeze({...existing, reusedExistingClaim: true});
+    }
     const source = sourceForClaim(command);
     source.digest = await sha256(source.etagsJson);
     const attemptId = this.randomUUID();
