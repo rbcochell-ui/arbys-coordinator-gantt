@@ -13,6 +13,8 @@ import {correlationIdOf, GraphHttpError, recipientsOf} from
   '../github_gantt_graph_actions_lean_source_only_20261122_v3/graph.mjs';
 import {inspectLegacyPilots, legacyPilotFence} from
   '../github_gantt_graph_actions_lean_source_only_20261122_v3/legacy_team_inventory_fence.mjs';
+import {LegacyOwnerRecovery} from
+  '../github_gantt_graph_actions_lean_source_only_20261122_v3/legacy_owner_recovery.mjs';
 import {buildSnapshotProviderContent} from './snapshot_first_provider_flow.mjs';
 import {GANTT_RELEASE_KEY} from './release_reader.mjs';
 import {SnapshotClaimReceiptStore, SNAPSHOT_CLAIM_MODE} from
@@ -181,9 +183,11 @@ export class SnapshotProviderActionWriter {
   constructor({config, graph, now = () => Date.now(),
       randomUUID = () => globalThis.crypto.randomUUID(),
       domParserClass = globalThis.DOMParser,
-      loadLegacyFenceProof} = {}) {
+      loadLegacyFenceProof, legacyOwnerRecovery = null} = {}) {
     if (typeof graph?.bindAccount !== 'function' ||
-        typeof randomUUID !== 'function' || typeof now !== 'function') {
+        typeof randomUUID !== 'function' || typeof now !== 'function' ||
+        legacyOwnerRecovery !== null &&
+          !(legacyOwnerRecovery instanceof LegacyOwnerRecovery)) {
       throw new TypeError('Bound delegated Graph writer is required');
     }
     this.config = config;
@@ -192,6 +196,7 @@ export class SnapshotProviderActionWriter {
     this.randomUUID = randomUUID;
     this.domParserClass = domParserClass;
     this.loadLegacyFenceProof = loadLegacyFenceProof;
+    this.legacyOwnerRecovery = legacyOwnerRecovery;
   }
 
   async _legacyFence(dispatchKey, graph) {
@@ -231,6 +236,9 @@ export class SnapshotProviderActionWriter {
     const context = await this._context(actor);
     const state = await context.store.getState(dispatchKey);
     if (state) {
+      if (state.claim.fields.MigratedFrom && this.legacyOwnerRecovery) {
+        return this.legacyOwnerRecovery.preview(dispatchKey);
+      }
       if (state.sent) return {status: 'sent_recorded_unverified', dispatchKey};
       if (state.claim.fields.MigratedFrom) return {status: 'legacy_occupied', dispatchKey};
       if (state.claim.fields.ActorOid.toLowerCase() !== context.actor.id ||
@@ -247,6 +255,9 @@ export class SnapshotProviderActionWriter {
 
   async _existing(state, context) {
     const dispatchKey = state.claim.fields.DispatchKey;
+    if (state.claim.fields.MigratedFrom && this.legacyOwnerRecovery) {
+      return this.legacyOwnerRecovery.reopen(dispatchKey);
+    }
     if (state.sent) {
       if (state.claim.fields.MigratedFrom ||
           state.claim.fields.ActorOid.toLowerCase() !== context.actor.id ||
@@ -385,6 +396,9 @@ export class SnapshotProviderActionWriter {
     idFromKey(dispatchKey);
     const context = await this._context(actor);
     const state = await context.store.getState(dispatchKey);
+    if (state?.claim.fields.MigratedFrom && this.legacyOwnerRecovery) {
+      return this.legacyOwnerRecovery.checkSent(dispatchKey);
+    }
     if (state) return this._existing(state, context);
     const fenced = await this._legacyFence(dispatchKey, context.graph);
     if (fenced) return occupiedForCaller(fenced);

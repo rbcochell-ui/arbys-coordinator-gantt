@@ -1,5 +1,6 @@
 import {customerDispatchKey, email, GRAPH_SCOPES, HeldActionError, providerDispatchKey,
   receiptKey, SITE_URL, validatedCustomerTrackerUrl} from './contract.mjs';
+import {LEGACY_SENT_FIELDS, sentPlanDigest} from './legacy_sent_attempt_contract.mjs';
 
 const CLAIM_TITLE = 'Arbys Coordinator Action Claims';
 const RECEIPT_TITLE = 'Arbys Coordinator Action Receipts';
@@ -15,11 +16,12 @@ export const RECEIPT_COLUMNS = Object.freeze([
   'ActualSubject', 'ActualBodySha256', 'ActualLinksSha256',
   'ActualToJson', 'ActualCcJson', 'ActualBccJson', 'SentAtUtc',
   'SentInternetMessageId', 'ReviewReason',
-  'RecordedAtUtc', 'MigratedFrom',
+  'RecordedAtUtc', 'MigratedFrom', 'PlannedSentSha256',
 ]);
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SHA = /^[0-9a-f]{64}$/;
 const SHA_MARKER = /^sha256:[0-9a-f]{64}$/;
+const RECEIPT_KINDS = Object.freeze(['Draft', 'SentAttempt', 'Sent']);
 const sentReviewCode = value => value ? 'SENT_DETAILS_CHANGED' : '';
 
 function fail(code) { throw new HeldActionError(code); }
@@ -60,7 +62,9 @@ function itemRecord(item) {
       typeof etag !== 'string' || !etag || !object(item.fields)) {
     fail('ACTION_ITEM_INCOMPLETE');
   }
-  return {id: String(item.id), etag, fields: item.fields};
+  const createdByOid = item?.createdBy?.user?.id;
+  return {id: String(item.id), etag, fields: item.fields,
+    createdByOid: GUID.test(createdByOid ?? '') ? createdByOid : null};
 }
 function storedRecipients(value) {
   let rows;
@@ -105,7 +109,7 @@ export class ClaimReceiptStore {
       fail('ACTION_LIST_IDENTITY_INVALID');
     }
     const columns = await this._get(
-      `${base}/columns?$select=name,required,indexed,enforceUniqueValues,text&$top=200`);
+      `${base}/columns?$select=name,required,indexed,enforceUniqueValues,text,choice&$top=200`);
     if (!Array.isArray(columns.value) || columns['@odata.nextLink']) {
       fail('ACTION_COLUMNS_INCOMPLETE');
     }
@@ -116,6 +120,23 @@ export class ClaimReceiptStore {
         byName.get(uniqueKey)?.enforceUniqueValues !== true ||
         !object(byName.get(uniqueKey)?.text)) {
       fail('ACTION_SCHEMA_UNVERIFIED');
+    }
+    if (uniqueKey === 'ReceiptKey') {
+      const kind = byName.get('Kind');
+      const digest = byName.get('PlannedSentSha256');
+      if (kind?.required !== true ||
+          !object(kind.choice) ||
+          kind.choice.allowTextEntry !== false ||
+          JSON.stringify(kind.choice.choices) !==
+            JSON.stringify(RECEIPT_KINDS) ||
+          object(kind.text) ||
+          digest?.required !== false ||
+          !object(digest.text) ||
+          digest.text.maxLength !== 64 ||
+          digest.text.allowMultipleLines !== false ||
+          object(digest.choice)) {
+        fail('ACTION_SCHEMA_UNVERIFIED');
+      }
     }
   }
 
@@ -130,7 +151,7 @@ export class ClaimReceiptStore {
 
   async _unique(base, field, value) {
     const query = new URLSearchParams({
-      '$select': 'id,eTag', '$expand': 'fields',
+      '$select': 'id,eTag,createdBy', '$expand': 'fields',
       '$filter': `fields/${field} eq '${value.replaceAll("'", "''")}'`,
       '$top': '2',
     });
@@ -142,13 +163,18 @@ export class ClaimReceiptStore {
 
   async getState(dispatchKey) {
     const action = actionOf(dispatchKey);
-    const [claim, draft, sent] = await Promise.all([
+    // The historical marker uses a longer suffix than the first-draft key.
+    // A maximum-length FORM key can still be read for normal draft actions.
+    const attemptKey = dispatchKey.length + '|SentAttempt'.length <= 255 ?
+      receiptKey(dispatchKey, 'SentAttempt') : null;
+    const [claim, draft, attempt, sent] = await Promise.all([
       this._unique(this.claimBase, 'DispatchKey', dispatchKey),
       this._unique(this.receiptBase, 'ReceiptKey', receiptKey(dispatchKey, 'Draft')),
+      attemptKey ? this._unique(this.receiptBase, 'ReceiptKey', attemptKey) : null,
       this._unique(this.receiptBase, 'ReceiptKey', receiptKey(dispatchKey, 'Sent')),
     ]);
     if (!claim) {
-      if (draft || sent) fail('ORPHAN_ACTION_RECEIPT');
+      if (draft || attempt || sent) fail('ORPHAN_ACTION_RECEIPT');
       return null;
     }
     const f = claim.fields;
@@ -183,7 +209,8 @@ export class ClaimReceiptStore {
       fail('CLAIM_EVIDENCE_INVALID');
     }
     assertNoCapability(f);
-    for (const [kind, receipt] of [['Draft', draft], ['Sent', sent]]) {
+    for (const [kind, receipt] of [['Draft', draft],
+      ['SentAttempt', attempt], ['Sent', sent]]) {
       if (receipt && (receipt.fields.ReceiptKey !== receiptKey(dispatchKey, kind) ||
           receipt.fields.DispatchKey !== dispatchKey || receipt.fields.Kind !== kind ||
           String(receipt.fields.ClaimItemId) !== claim.id ||
@@ -211,6 +238,19 @@ export class ClaimReceiptStore {
         fail('DRAFT_RECEIPT_INVALID');
       }
     }
+    if (attempt) {
+      const a = attempt.fields;
+      if (!migrated || !draft ||
+          a.DraftImmutableId !== draft.fields.DraftImmutableId ||
+          !SHA.test(a.PlannedSentSha256 ?? '') ||
+          !Number.isFinite(Date.parse(a.RecordedAtUtc ?? '')) ||
+          attempt.createdByOid?.toLowerCase() !== f.ActorOid.toLowerCase() ||
+          ['SentImmutableId', 'ActualToJson', 'ActualCcJson',
+            'ActualBccJson', 'DraftWebLink'].some(name =>
+            a[name] !== undefined && a[name] !== null && a[name] !== '')) {
+        fail('SENT_ATTEMPT_INVALID');
+      }
+    }
     if (sent) {
       const s = sent.fields;
       const to = storedRecipients(s.ActualToJson);
@@ -231,8 +271,18 @@ export class ClaimReceiptStore {
           !Number.isFinite(Date.parse(s.RecordedAtUtc ?? ''))) {
         fail('SENT_RECEIPT_INVALID');
       }
+      if (attempt) {
+        const pinned = Object.fromEntries(LEGACY_SENT_FIELDS.map(
+          name => [name, s[name]]));
+        let digest;
+        try { digest = await sentPlanDigest(pinned); }
+        catch { fail('SENT_ATTEMPT_INVALID'); }
+        if (digest !== attempt.fields.PlannedSentSha256) {
+          fail('SENT_ATTEMPT_INVALID');
+        }
+      }
     }
-    return {claim, draft, sent};
+    return {claim, draft, attempt, sent};
   }
 
   async createClaim(dispatchKey, actor, source, attemptId, correlationId) {

@@ -57,6 +57,8 @@ function previewMessage(preview) {
 }
 function draftMessage(result) {
   switch (result.reviewState) {
+    case 'legacy_draft_review_required':
+      return 'Historical Outlook draft reopened. Verify the current work order or release, recipients, and content before Send.';
     case 'recipient_review_required':
       return 'Outlook draft is ready. To needs review or entry before Send.';
     case 'draft_review_required':

@@ -10,8 +10,18 @@ import {GraphClient} from
   '../../github_gantt_graph_actions_lean_source_only_20261122_v3/graph.mjs';
 import {LeanGanttActions} from
   '../../github_gantt_graph_actions_lean_source_only_20261122_v3/actions.mjs';
+import {ClaimReceiptStore} from
+  '../../github_gantt_graph_actions_lean_source_only_20261122_v3/claim_receipt_store.mjs';
 import {createReleaseInventoryLoader} from
   '../../github_gantt_graph_actions_lean_source_only_20261122_v3/legacy_team_inventory_fence.mjs';
+import {LegacyOwnerRecovery} from
+  '../../github_gantt_graph_actions_lean_source_only_20261122_v3/legacy_owner_recovery.mjs';
+import {createDerivedLegacyProofReader} from
+  '../../github_gantt_graph_actions_lean_source_only_20261122_v3/legacy_migration_proof.mjs';
+import {createLegacySentGraphPort} from
+  '../../github_gantt_graph_actions_lean_source_only_20261122_v3/legacy_sent_graph_port.mjs';
+import {createSignedOwnerRoute} from
+  '../../github_gantt_graph_actions_lean_source_only_20261122_v3/signed_owner_route.mjs';
 import {assertActiveConfig, SITE_URL} from
   '../../github_gantt_graph_actions_lean_source_only_20261122_v3/contract.mjs';
 import {GanttReleaseReader, GANTT_RELEASE_KEY, GANTT_RELEASE_TITLE} from
@@ -89,6 +99,15 @@ export function validateIntegrationConfig(config) {
       snapshot.encryptedPayloadUrl !== PAYLOAD_URL) {
     fail('SITE_RUNTIME_BINDING_MISMATCH');
   }
+  if (config.legacyOwner?.enabled === true &&
+      (config.legacyOwner.reviewedConfig?.siteId !== lean.siteId ||
+        config.legacyOwner.reviewedConfig?.siteUrl !== SITE_URL ||
+        config.legacyOwner.reviewedConfig?.newLists?.claims?.toLowerCase() !==
+          lean.lists.claims.toLowerCase() ||
+        config.legacyOwner.reviewedConfig?.newLists?.receipts?.toLowerCase() !==
+          lean.lists.receipts.toLowerCase())) {
+    fail('LEGACY_OWNER_BINDING_MISMATCH');
+  }
   return Object.freeze({auth, payloadUrl: PAYLOAD_URL});
 }
 
@@ -105,16 +124,36 @@ export async function prepareIntegratedSite({config, loadAuthenticatedChart,
       typeof fetchImpl !== 'function' || typeof now !== 'function') {
     fail('SITE_DEPENDENCIES_INCOMPLETE');
   }
+  let loadMigrationProof = null;
+  if (config.legacyOwner?.enabled === true) {
+    try {
+      loadMigrationProof = createDerivedLegacyProofReader(
+        config.legacyOwner.reviewedConfig);
+    } catch { fail('LEGACY_DERIVED_PROOF_PIN_MISSING'); }
+  }
   const auth = await prepareMsalTokenProvider({authConfig: config.auth,
     createPublicClientApplication: msalFactory});
   const graph = new GraphClient({tokenProvider: auth.tokenProvider,
     fetchImpl});
   const loadLegacyFenceProof = createReleaseInventoryLoader(
     config.legacyInventory, now);
+  let legacyOwnerRecovery = null;
+  if (config.legacyOwner?.enabled === true) {
+    const ownerAdapter = createSignedOwnerRoute({graph,
+      makeStore: bound => new ClaimReceiptStore({graph: bound,
+        config: config.lean, now}),
+      loadLegacyFenceProof,
+      loadMigrationProof,
+      config: config.legacyOwner.reviewedConfig, now});
+    legacyOwnerRecovery = new LegacyOwnerRecovery({adapter: ownerAdapter,
+      postSentReceipt: createLegacySentGraphPort({graph,
+        siteId: config.lean.siteId,
+        receiptsListId: config.lean.lists.receipts}), now});
+  }
   const customerActions = new LeanGanttActions({config: config.lean,
-    graph, now, loadLegacyFenceProof});
+    graph, now, loadLegacyFenceProof, legacyOwnerRecovery});
   const writer = new SnapshotProviderActionWriter({config: config.snapshot,
-    graph, now, loadLegacyFenceProof});
+    graph, now, loadLegacyFenceProof, legacyOwnerRecovery});
   // The Release reader binds the same pinned account for every selected
   // Graph GET. Its row/ETag and served chart are reread before the first POST.
   const releaseGraph = Object.freeze({request: (path, options) =>

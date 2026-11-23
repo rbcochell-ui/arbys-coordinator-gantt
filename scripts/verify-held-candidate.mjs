@@ -13,6 +13,9 @@ const canonical = bytes => Buffer.from(bytes.toString('utf8').replace(/\r+\n/gu,
 
 assert.equal(manifest.schema, 'arbys-gantt-held-build/v1');
 assert.equal(manifest.integrationEnabled, false);
+assert.equal(manifest.sha256['data/gantt.enc.json'],
+  'a7719f606cfbada0cf31187c18ada8548d4b42024653c26888367e1f7ed8c84c',
+  'encrypted chart must remain at the last verified content');
 
 for (const [relativePath, expected] of Object.entries(manifest.sha256)) {
   const bytes = readFileSync(join(root, relativePath));
@@ -28,6 +31,7 @@ assert.equal(config.auth.enabled, false);
 assert.equal(config.lean.enabled, false);
 assert.equal(config.snapshot.enabled, false);
 assert.equal(config.legacyInventory, null);
+assert.equal(config.legacyOwner, null);
 assert.equal(config.lean.providerEnabled, false);
 assert.equal(config.lean.customerEnabled, false);
 assert.equal(config.snapshot.providerSnapshotEnabled, false);
@@ -56,13 +60,17 @@ for (const id of ['signInAction', 'verifyAction', 'providerDraftAction',
   assert.ok(new RegExp(`<button id="${id}"[^>]*\\bdisabled\\b`, 'u').test(html),
     `${id} must be checked in disabled`);
 }
-assert.ok(html.includes('/arbys-coordinator-gantt/assets/app-MMTKfleV.js'));
+const appBundles = Object.keys(manifest.sha256).filter(path =>
+  /^assets\/app-[A-Za-z0-9_-]+\.js$/u.test(path));
+assert.equal(appBundles.length, 1, 'manifest must pin exactly one app bundle');
+const appBundle = appBundles[0].slice('assets/'.length);
+assert.ok(html.includes(`/arbys-coordinator-gantt/assets/${appBundle}`));
 assert.ok(html.includes('sandbox="allow-scripts allow-popups'));
 assert.deepEqual(readdirSync(join(root, 'assets')).filter(name =>
-  /^app-[A-Za-z0-9_-]+\.js$/u.test(name)), ['app-MMTKfleV.js'],
+  /^app-[A-Za-z0-9_-]+\.js$/u.test(name)), [appBundle],
   'only the reviewed app bundle may remain at the Pages root');
 
-for (const filename of ['app-MMTKfleV.js', 'Configuration-B1Fwyfg7.js',
+for (const filename of [appBundle, 'Configuration-B1Fwyfg7.js',
   'redirect-Ck1ZdWvy.js']) {
   const bundle = readFileSync(join(root, 'assets', filename), 'utf8');
   assert.ok(!/Mail\.Send\b/iu.test(bundle),

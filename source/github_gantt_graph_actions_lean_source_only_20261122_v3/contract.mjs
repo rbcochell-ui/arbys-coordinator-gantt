@@ -111,7 +111,8 @@ export function customerDispatchKey(formSourceKey) {
 }
 
 export function receiptKey(dispatchKey, kind) {
-  if (!['Draft', 'Sent'].includes(kind) || typeof dispatchKey !== 'string' ||
+  if (!['Draft', 'SentAttempt', 'Sent'].includes(kind) ||
+      typeof dispatchKey !== 'string' ||
       dispatchKey.length + kind.length + 1 > 255) {
     throw new HeldActionError('RECEIPT_KEY_INVALID');
   }

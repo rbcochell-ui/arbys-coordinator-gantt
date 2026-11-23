@@ -7,6 +7,7 @@ import {correlationIdOf, GraphHttpError, recipientsOf} from './graph.mjs';
 import {CustomerReleaseResolver} from './customer_source.mjs';
 import {inspectLegacyPilots, legacyPilotFence} from
   './legacy_team_inventory_fence.mjs';
+import {LegacyOwnerRecovery} from './legacy_owner_recovery.mjs';
 import {ProviderSourceResolver} from './provider_source.mjs';
 
 function fail(code) { throw new HeldActionError(code); }
@@ -246,15 +247,20 @@ export class LeanGanttActions {
   constructor({config, graph, now = () => Date.now(),
       randomUUID = () => globalThis.crypto.randomUUID(),
       domParserClass = globalThis.DOMParser,
-      loadLegacyFenceProof}) {
+      loadLegacyFenceProof, legacyOwnerRecovery = null}) {
     if (typeof graph?.bindAccount !== 'function' ||
-        typeof randomUUID !== 'function') throw new TypeError('Bound delegated Graph is required');
+        typeof randomUUID !== 'function' ||
+        legacyOwnerRecovery !== null &&
+          !(legacyOwnerRecovery instanceof LegacyOwnerRecovery)) {
+      throw new TypeError('Bound delegated Graph is required');
+    }
     this.config = config;
     this.graph = graph;
     this.now = now;
     this.randomUUID = randomUUID;
     this.domParserClass = domParserClass;
     this.loadLegacyFenceProof = loadLegacyFenceProof;
+    this.legacyOwnerRecovery = legacyOwnerRecovery;
   }
 
   async _legacyFence(dispatchKey, graph) {
@@ -289,7 +295,12 @@ export class LeanGanttActions {
     }
   }
 
-  async _existingAction(state, context) {
+  async _existingAction(state, context, {checkSent = false} = {}) {
+    if (state.claim.fields.MigratedFrom && this.legacyOwnerRecovery) {
+      return checkSent ? this.legacyOwnerRecovery.checkSent(
+        state.claim.fields.DispatchKey) : this.legacyOwnerRecovery.reopen(
+        state.claim.fields.DispatchKey);
+    }
     // A shared row occupies the key but cannot itself prove a mailbox send.
     // Only the claim owner can verify the original message through /me.
     if (state.sent) {
@@ -327,11 +338,14 @@ export class LeanGanttActions {
     const context = await this._context(kind);
     const state = await context.store.getState(dispatchKey);
     if (state) {
-      const status = state.sent ? 'sent_recorded_unverified' :
+      const recovered = state.claim.fields.MigratedFrom &&
+        this.legacyOwnerRecovery ?
+        await this.legacyOwnerRecovery.preview(dispatchKey) : null;
+      const status = recovered?.status ?? (state.sent ? 'sent_recorded_unverified' :
         state.claim.fields.MigratedFrom ?
         'legacy_occupied' : state.claim.fields.ActorOid.toLowerCase() !==
         context.actor.id ? 'draft_status_unverified' : state.draft ?
-          'draft_occupied' : 'claim_outcome_unverified';
+          'draft_occupied' : 'claim_outcome_unverified');
       return {kind, id, dispatchKey, status,
         to: [], cc: [], recipientReviewRequired: false,
         webLink: null, reviewReason: sharedSentReview(
@@ -415,7 +429,8 @@ export class LeanGanttActions {
     const context = await this._context('provider');
     const key = providerDispatchKey(id);
     const state = await context.store.getState(key);
-    if (state) return this._existingAction(state, context);
+    if (state) return this._existingAction(state, context,
+      {checkSent: true});
     const fenced = await this._legacyFence(key, context.graph);
     if (fenced) return occupiedForCaller(fenced);
     return {status: 'not_started'};
@@ -615,7 +630,8 @@ export class LeanGanttActions {
     const context = await this._context('customer');
     const dispatchKey = customerDispatchKey(key);
     const state = await context.store.getState(dispatchKey);
-    if (state) return this._existingAction(state, context);
+    if (state) return this._existingAction(state, context,
+      {checkSent: true});
     const fenced = await this._legacyFence(dispatchKey, context.graph);
     if (fenced) return occupiedForCaller(fenced);
     return {status: 'not_started'};

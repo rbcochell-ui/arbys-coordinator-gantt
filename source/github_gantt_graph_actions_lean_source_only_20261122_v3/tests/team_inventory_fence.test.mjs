@@ -173,6 +173,26 @@ test('owner-signed full inventory blocks both pilots and passes an unrelated key
   assert.equal(f.calls.length, 20);
 });
 
+test('signed pilot proof digests are available only for exact occupied pilots', async () => {
+  const providerDigest = 'b'.repeat(64);
+  const customerDigest = 'c'.repeat(64);
+  const f = await fixture(p => { p.migrationProofDigests = {
+    provider: providerDigest, customer: customerDigest}; });
+  const provider = await inspectLegacyPilots(PROVIDER_KEY, f.graph,
+    SITE_ID, f.load);
+  const customer = await inspectLegacyPilots(CUSTOMER_KEY, f.graph,
+    SITE_ID, f.load);
+  const unrelated = await inspectLegacyPilots(OTHER_KEY, f.graph,
+    SITE_ID, f.load);
+  assert.equal(provider.migrationProofDigest, providerDigest);
+  assert.equal(customer.migrationProofDigest, customerDigest);
+  assert.equal(unrelated.migrationProofDigest, null);
+  const bad = await fixture(p => { p.migrationProofDigests = {
+    provider: providerDigest, customer: 'not-a-digest'}; });
+  await assert.rejects(inspectLegacyPilots(PROVIDER_KEY, bad.graph,
+    SITE_ID, bad.load), error => error?.code === 'LEGACY_FENCE_UNVERIFIED');
+});
+
 test('unbranded caller object and a changed post-Claim proof never authorize a draft', async () => {
   const f = await fixture();
   await assert.rejects(inspectLegacyPilots(OTHER_KEY, f.graph,

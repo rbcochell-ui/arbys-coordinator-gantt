@@ -6,7 +6,7 @@ const PREVIEW_STATUSES = new Set([
 ]);
 const DRAFT_STATUSES = new Set([
   'draft', 'recipient_review_required', 'draft_review_required',
-  'source_changed_review_required',
+  'source_changed_review_required', 'legacy_draft_review_required',
 ]);
 const HELD_REASONS = Object.freeze({
   not_started: 'NOT_STARTED',
@@ -57,6 +57,7 @@ function normalizeResult(result) {
       recipientReviewRequired: result.recipientReviewRequired === true ||
         result.status === 'recipient_review_required',
       contentReviewRequired: result.contentReviewRequired === true ||
+        result.status === 'legacy_draft_review_required' ||
         ['draft_review_required', 'source_changed_review_required']
           .includes(result.status),
     });

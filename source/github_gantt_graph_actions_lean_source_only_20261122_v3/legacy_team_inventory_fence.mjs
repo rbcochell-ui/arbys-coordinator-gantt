@@ -142,11 +142,21 @@ function pilotRow(value, kind, sources) {
 }
 
 function proofShape(proof, config, nowMs) {
-  keys(proof, ['schema', 'siteId', 'siteUrl', 'issuedAtUtc',
+  const baseKeys = ['schema', 'siteId', 'siteUrl', 'issuedAtUtc',
     'validUntilUtc', 'allPagesRead', 'sourcesComplete',
     'inventoryEvidenceSha256', 'reviewReceiptRef', 'sourceLists',
     'writers', 'occupiedKeys', 'uniqueKeyCount',
-    'uniqueKeysSha256', 'pilots']);
+    'uniqueKeysSha256', 'pilots'];
+  // Earlier signed inventories remain valid as occupation fences. An owner
+  // draft reopen additionally needs both per-pilot proof digests. These are
+  // hashes only; no mailbox ID or private tracker URL enters the team List.
+  keys(proof, Object.hasOwn(proof ?? {}, 'migrationProofDigests') ?
+    [...baseKeys, 'migrationProofDigests'] : baseKeys);
+  if (Object.hasOwn(proof, 'migrationProofDigests')) {
+    keys(proof.migrationProofDigests, ['provider', 'customer']);
+    if (!SHA.test(proof.migrationProofDigests.provider ?? '') ||
+        !SHA.test(proof.migrationProofDigests.customer ?? '')) fail();
+  }
   if (proof.schema !== PROOF_SCHEMA || proof.siteId !== config.siteId ||
       proof.siteUrl !== config.siteUrl ||
       proof.allPagesRead !== true || proof.sourcesComplete !== true ||
@@ -383,7 +393,7 @@ export function createReleaseInventoryLoader(config, now = () => Date.now()) {
 
 /**
  * Pure read path used before and after a unique Claim. It never reads the
- * Ryan/Owners-only historical Lists under Tony or Harmony's identity.
+ * owner-restricted historical Lists under another coordinator's identity.
  */
 export async function inspectLegacyPilots(dispatchKey, graph, siteId,
     loadProof, expectedProofDigest = null) {
@@ -402,13 +412,16 @@ export async function inspectLegacyPilots(dispatchKey, graph, siteId,
     proof.pilots.provider :
     key === proof.pilots.customer.dispatchKey ?
       proof.pilots.customer : null;
+  const migrationProofDigest = pilot ?
+    proof.migrationProofDigests?.[
+      pilot === proof.pilots.provider ? 'provider' : 'customer'] ?? null : null;
   const occupied = proof.occupiedKeys.includes(key) ? Object.freeze({
     status: 'legacy_occupied', dispatchKey: key,
     reason: 'OWNER_RECONCILIATION_REQUIRED',
     ...(pilot ? {rowRef: Object.freeze({siteId, listId: pilot.listId,
       itemId: String(pilot.itemId), etag: pilot.graphEtag})} : {}),
   }) : null;
-  return Object.freeze({occupied, proofDigest,
+  return Object.freeze({occupied, proofDigest, migrationProofDigest,
     validUntilMs: dateMs(proof.validUntilUtc)});
 }
 

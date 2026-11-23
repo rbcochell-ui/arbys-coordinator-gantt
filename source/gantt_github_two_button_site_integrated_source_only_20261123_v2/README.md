@@ -44,22 +44,35 @@ the instant Outlook sends it.
 
 Every first-draft path also reads the same owner-signed historical-key
 inventory from the restricted Gantt Release row. The inventory must list all
-old draft/receipt sources and writers, including existing pilot keys; Tony and
-Harmony read this team-safe Release row through delegated Graph, not Ryan's
-old private Lists. The runtime rereads and binds the Release ETag after the
+old draft/receipt sources and writers, including existing pilot keys; authorized coordinators read this
+team-safe Release row through delegated Graph, without reading the draft
+owner's old private Lists. The runtime rereads and binds the Release ETag after the
 unique Claim, checks expiry immediately before Outlook POST, and holds on a
 missing, changed, or occupied key. The checked-in `legacyInventory` binding is
 `null`, so this protection cannot activate without a reviewed signed receipt.
 An old writer restarted during the proof's validity window remains an
 operational risk until the old writers are durably retired or checked live.
 
-If the saved draft immutable ID returns 404 after a coordinator sends it in
-Outlook, the draft owner can make one bounded Sent Items reconciliation from
-five minutes before the shared Claim time. Only a unique copy with the exact
-opaque draft correlation header is considered; the full Sent message must then
-pass the normal folder, recipient, body, link, and Internet message ID checks.
-An incomplete scan or unmatched header leaves the Claim occupied and the
-result unresolved. This held source does not create another draft as recovery.
+The optional owner-only legacy route reconstructs the V3 migration proof
+from the exact saved Claim and Draft Receipt, the direct old Graph item,
+reviewed plan pins, and a per-pilot digest in the owner-signed Release
+inventory. It does not need a fourth proof List. A local reference comparison
+on November 23 ran the original V3 preparation and this derived reader on
+invented provider and customer observations: both proof objects matched
+field for field, including the plan SHA-256. This is source validation, not
+tenant readback. A historical Sent check first reserves a unique
+`|SentAttempt` receipt whose digest covers the exact frozen Sent row. A
+saved marker without Sent, or an uncertain marker readback, stays occupied
+for owner review and cannot authorize another Sent POST after reload.
+
+For new-key drafts with a runtime correlation header, a 404 immutable ID
+after Outlook Send can trigger one bounded Sent Items reconciliation from five
+minutes before the shared Claim time. Only a unique copy with that exact header
+is considered; the full Sent message must pass the folder, recipient, body,
+link, and Internet message ID checks. An incomplete scan leaves the Claim
+occupied and unresolved. Historical V3 pilot drafts lack that header: if their
+immutable ID is unavailable, they remain occupied for owner reconciliation.
+No path creates another draft as recovery.
 
 `src/compose_site.mjs` injects **all three** snapshot provider operations
 (`preview`, `draft`, `checkSent`) into the parent adapter. It never combines a
@@ -85,7 +98,7 @@ Claim can occupy the provider key without allowing a second draft.
   redirect bridge at the requested exact SPA URL.
 
 Run `npm test`, `npm run build`, and `npm run smoke` from this folder. The
-current result is **13/13 unit tests, a production Vite build, and an isolated
+current result is **15/15 unit tests, a production Vite build, and an isolated
 Edge smoke pass**. The smoke serves an invented encrypted chart on loopback,
 checks the shipped disabled build, then builds a temporary fake-runtime
 variant to exercise both draft buttons, return-to-Gantt Sent checks, an
@@ -112,7 +125,7 @@ the smoke's temporary invented asset into a publication package.
 | Entra | Register the exact SPA redirect `https://rbcochell-ui.github.io/arbys-coordinator-gantt/auth/redirect.html`; verify delegated `User.Read`, `Lists.SelectedOperations.Selected`, and `Mail.ReadWrite` for named coordinators. Run account switching and popup/redirect canaries. |
 | Lists | Provision and independently read back the restricted owner-write Gantt Release List plus customer Release, unique Claims, and unique Receipts Lists. Prove selected grants and effective actor ACLs, including coordinator Add/View with no Edit/Delete where proposed. The Gantt Release schema remains a proposal. |
 | Migration and privacy | Reconcile old pilot occupied keys and any V2 shared rows that stored raw Outlook links, subjects, free-text reasons, or customer capability URLs. Lean V3 and provider V4 reject incompatible legacy shapes; no automatic rewrite is included. |
-| Legacy fence | Inventory every historical draft/receipt source and old writer with complete page receipts, retire or check the old writers, issue a bounded P-256 signed proof in the restricted Release row, and verify Ryan/Tony/Harmony delegated reads plus pre/post Claim drift. A signed Off observation alone can go stale if a writer is restarted. |
+| Legacy fence | Inventory every historical draft/receipt source and old writer with complete page receipts, retire or check the old writers, issue a bounded P-256 signed proof in the restricted Release row, and verify each authorized coordinator's delegated read plus pre/post Claim drift. A signed Off observation alone can go stale if a writer is restarted. |
 | Source and chart | Owner must approve a fresh exact ciphertext/decrypted HTML digest row. The deployed encrypted chart must carry reviewed allowlists covering intended eligible native WOs and FORM keys; the old pilot allowlist is too narrow for a team release. The published script hashes and selected chart version must be checked together. |
 | Browser policy | The inherited held CSP currently permits `connect-src 'self'` and `frame-src 'self' about:` only. Before live Graph/MSAL calls, review and test the minimal Microsoft Graph and Entra `connect-src`/`frame-src` allowlist for the actual tenant and token flow. The current CSP deliberately leaves live actions blocked even if a config Boolean is changed. |
 | Outlook and operations | Run delegated empty-To, two-role shared mailbox, six-link HTML/readback, immutable-ID, changed draft reopen, cross-user duplicate race, actual Sent Items, and missing-message canaries. A coordinator still checks current Thirsty and edits the Outlook draft before Send. |

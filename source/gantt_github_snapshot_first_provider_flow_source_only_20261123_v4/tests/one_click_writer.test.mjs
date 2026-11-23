@@ -344,6 +344,47 @@ test('late historical occupancy returns held without a Claim or draft', async ()
   assert.equal(observes >= 4, true);
 });
 
+test('snapshot parent route accepts an owner-only historical reopen without a new draft', async () => {
+  const key = providerDispatchKey(WO);
+  const link = 'https://outlook.office.com/mail/deeplink/compose/invented';
+  const h = harness({actionPortFactory: () => ({
+    observe: async () => ({status: 'draft_occupied', dispatchKey: key}),
+    resume: async () => ({status: 'legacy_draft_review_required',
+      dispatchKey: key, webLink: link, sendReady: false}),
+    checkSent: async () => ({status: 'legacy_draft_review_required',
+      dispatchKey: key, webLink: link, sendReady: false}),
+    createFirstDraft: async () => { throw new Error('no replacement draft'); },
+  })});
+  assert.equal((await h.flow.preview(WO)).status, 'draft_occupied');
+  const result = await h.flow.draft(WO);
+  assert.equal(result.status, 'legacy_draft_review_required');
+  assert.equal(result.webLink, link);
+  assert.equal(result.sendReady, false);
+  assert.equal((await h.flow.checkSent(WO)).status,
+    'legacy_draft_review_required');
+  assert.deepEqual([h.graph.claimPosts, h.graph.draftPosts,
+    h.graph.receiptPosts], [0, 0, 0]);
+});
+
+test('snapshot parent route leaves a nonowner historical key occupied', async () => {
+  const key = providerDispatchKey(WO);
+  const h = harness({actionPortFactory: () => ({
+    observe: async () => ({status: 'legacy_occupied', dispatchKey: key}),
+    resume: async () => ({status: 'legacy_occupied', dispatchKey: key,
+      webLink: null, sendReady: false}),
+    checkSent: async () => ({status: 'legacy_occupied', dispatchKey: key,
+      webLink: null, sendReady: false}),
+    createFirstDraft: async () => { throw new Error('no replacement draft'); },
+  })});
+  assert.equal((await h.flow.preview(WO)).status, 'legacy_occupied');
+  const result = await h.flow.draft(WO);
+  assert.equal(result.status, 'legacy_occupied');
+  assert.equal(result.webLink, null);
+  assert.equal((await h.flow.checkSent(WO)).status, 'legacy_occupied');
+  assert.deepEqual([h.graph.claimPosts, h.graph.draftPosts,
+    h.graph.receiptPosts], [0, 0, 0]);
+});
+
 test('snapshot first draft rereads the legacy fence after Claim', async () => {
   const h = harness();
   let reads = 0;

@@ -87,6 +87,7 @@ test('checked-in site stays disabled without MSAL, Graph or a payload', async ()
   assert.equal(INTEGRATION_CONFIG.encryptedPayloadUrl, null);
   assert.equal(INTEGRATION_CONFIG.lean.lists.claims, null);
   assert.equal(INTEGRATION_CONFIG.legacyInventory, null);
+  assert.equal(INTEGRATION_CONFIG.legacyOwner, null);
   let called = false;
   const result = await prepareIntegratedSite({config: INTEGRATION_CONFIG,
     msalFactory: () => { called = true; throw new Error('must stay held'); },
@@ -94,6 +95,30 @@ test('checked-in site stays disabled without MSAL, Graph or a payload', async ()
   assert.equal(result.adapter.enabled, false);
   assert.equal(result.panel, null);
   assert.equal(called, false);
+});
+
+test('legacy owner binding requires exact List IDs and reviewed proof pins', async () => {
+  const wrongSite = inventedConfig();
+  wrongSite.legacyOwner = {enabled: true, reviewedConfig: {
+    siteId: 'groups.coca-cola.com,ffffffff-ffff-4fff-8fff-ffffffffffff,66666666-6666-4666-8666-666666666666',
+    siteUrl: wrongSite.releaseSiteUrl,
+  }};
+  assert.throws(() => validateIntegrationConfig(wrongSite),
+    {code: 'LEGACY_OWNER_BINDING_MISMATCH'});
+
+  const config = inventedConfig();
+  config.legacyOwner = {enabled: true, reviewedConfig: {
+    siteId: SITE_ID, siteUrl: config.releaseSiteUrl,
+    newLists: {claims: LISTS.claims, receipts: LISTS.receipts},
+  }};
+  let graphRequests = 0;
+  await assert.rejects(prepareIntegratedSite({config,
+    msalFactory: () => ({async initialize() {}, getAllAccounts: () => []}),
+    fetchImpl: () => { graphRequests++; throw new Error('unexpected Graph request'); },
+    loadAuthenticatedChart: () => { throw new Error('unexpected chart read'); },
+    panelElements: fakeElements(),
+  }), {code: 'LEGACY_DERIVED_PROOF_PIN_MISSING'});
+  assert.equal(graphRequests, 0);
 });
 
 test('active bindings require one identity, one unique List pair and exact Pages asset', () => {
@@ -143,6 +168,53 @@ test('invented active composition prepares sign-in without a Graph request', asy
   assert.equal(requests, 0);
   assert.throws(() => result.panel.selectionPort.capture('0WO123456789012345'),
     {code: 'DATED_PREVIEW_SELECTION_REQUIRED'});
+});
+
+test('browser composition constructs the owner proof reader from reviewed pins', async () => {
+  const config = inventedConfig();
+  const fingerprint = 'a'.repeat(64);
+  const pinned = (spec, itemId) => ({
+    listId: spec.oldListGuid, itemId, title: spec.oldListTitle,
+    migrationSpec: spec,
+    migrationFingerprintSha256: fingerprint,
+    migrationPlanSha256: 'b'.repeat(64),
+    migrationReadback: {claimItemId: '41', draftReceiptItemId: '42',
+      claimGraphEtag: '"1"', draftGraphEtag: '"1"',
+      claimFieldsSha256: 'c'.repeat(64),
+      draftFieldsSha256: 'd'.repeat(64)},
+    originalOldRow: {graphEtag: '"4"',
+      fullFieldsSha256: 'e'.repeat(64)},
+  });
+  config.legacyOwner = {enabled: true, reviewedConfig: {
+    siteId: SITE_ID, siteUrl: config.releaseSiteUrl,
+    newLists: {claims: LISTS.claims, receipts: LISTS.receipts},
+    approvedCustomerReleaseKinds: ['InventedCustomerRelease/v1'],
+    oldLists: {
+      'provider-parts': pinned({kind: 'provider-parts',
+        entityId: '0WOTN00000abcde4AA',
+        oldListGuid: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        oldListTitle: 'Invented Provider Ledger',
+        oldKeyField: 'DispatchKey',
+        oldHeader: 'x-arbys-parts-intent-id'}, 1),
+      'customer-tracker': pinned({kind: 'customer-tracker',
+        entityId: 'F:123:456',
+        oldListGuid: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+        oldListTitle: 'Invented Customer Releases',
+        oldKeyField: 'FormSourceKey',
+        approvedReleaseKind: 'InventedCustomerRelease/v1'}, 1),
+    },
+  }};
+  let requests = 0;
+  const result = await prepareIntegratedSite({config,
+    msalFactory: () => ({async initialize() {}, getAllAccounts: () => [],
+      loginPopup() { throw new Error('no login'); },
+      acquireTokenPopup() { throw new Error('no token'); },
+      acquireTokenSilent() { throw new Error('no token'); }}),
+    fetchImpl: () => { requests++; throw new Error('no read before click'); },
+    loadAuthenticatedChart: () => { throw new Error('no chart read'); },
+    panelElements: fakeElements()});
+  assert.equal(result.adapter.enabled, true);
+  assert.equal(requests, 0);
 });
 
 test('chart loader returns exact invented served bytes and rejects wrong URL', async () => {
