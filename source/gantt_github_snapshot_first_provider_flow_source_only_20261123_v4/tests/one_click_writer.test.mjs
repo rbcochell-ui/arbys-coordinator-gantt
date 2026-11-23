@@ -230,6 +230,13 @@ function harness(options = {}) {
     graph, now: () => f.nowMs,
     randomUUID: () => `77777777-7777-4777-8777-${String(++uuid).padStart(12, '0')}`,
     domParserClass: BrowserParser});
+  // This existing harness isolates snapshot Claim, Draft and Sent behavior.
+  // The production composition binds a signed loader; the separate team
+  // inventory tests exercise that loader and its pre/post Claim checks.
+  writer._legacyFence = async () => null;
+  writer._inspectLegacy = async () => ({occupied: null,
+    proofDigest: 'snapshot-writer-fixture',
+    validUntilMs: Date.now() + 60_000});
   const actionPort = options.actionPortFactory?.(writer, graph) ?? writer;
   const releaseReader = new GanttReleaseReader({graph,
     siteId: SITE_ID, listId: LISTS.ganttRelease,
@@ -299,6 +306,72 @@ test('one click makes one unique Claim, one unsent six-link draft and one Draft 
   assert.equal(h.graph.requestCalls.some(([, method]) =>
     !['GET', 'POST'].includes(method)), false);
   assert.equal(typeof h.graph.sendMail, 'undefined');
+});
+
+test('an existing Claim can reopen and check Sent when legacy proof is unavailable', async () => {
+  const h = harness();
+  const created = await h.flow.draft(WO);
+  assert.equal(created.status, 'draft');
+  h.writer._legacyFence = async () => {
+    throw new Error('expired historical proof must not gate existing Claim');
+  };
+  h.writer._inspectLegacy = async () => {
+    throw new Error('expired historical inventory must not gate existing Claim');
+  };
+  const key = providerDispatchKey(WO);
+  assert.equal((await h.writer.observe(key, ACTOR_A)).status, 'draft_occupied');
+  assert.equal((await h.writer.resume(key, ACTOR_A)).status, 'draft');
+  assert.equal((await h.writer.checkSent(key, ACTOR_A)).status, 'draft');
+  assert.equal((await h.flow.draft(WO)).status, 'draft');
+  assert.deepEqual([h.graph.claimPosts, h.graph.draftPosts,
+    h.graph.receiptPosts], [1, 1, 1]);
+});
+
+test('late historical occupancy returns held without a Claim or draft', async () => {
+  const h = harness();
+  const key = providerDispatchKey(WO);
+  const occupied = {status: 'legacy_occupied', dispatchKey: key,
+    reason: 'OWNER_RECONCILIATION_REQUIRED'};
+  let observes = 0;
+  h.writer._legacyFence = async () => (++observes <= 2 ? null : occupied);
+  h.writer._inspectLegacy = async () => ({occupied,
+    proofDigest: 'invented-occupied-proof', validUntilMs: Date.now() + 60_000});
+  const result = await h.flow.draft(WO);
+  assert.equal(result.status, 'legacy_occupied');
+  assert.equal(result.dispatchKey, key);
+  assert.deepEqual([h.graph.claimPosts, h.graph.draftPosts,
+    h.graph.receiptPosts], [0, 0, 0]);
+  assert.equal(observes >= 4, true);
+});
+
+test('snapshot first draft rereads the legacy fence after Claim', async () => {
+  const h = harness();
+  let reads = 0;
+  h.writer._inspectLegacy = async () => {
+    reads++;
+    if (reads === 2) {
+      const error = new Error('legacy proof changed after Claim');
+      error.code = 'LEGACY_FENCE_UNVERIFIED';
+      throw error;
+    }
+    return {occupied: null, proofDigest: 'invented-proof',
+      validUntilMs: Date.now() + 60_000};
+  };
+  await rejectsCode(() => h.flow.draft(WO),
+    'LEGACY_FENCE_UNVERIFIED');
+  assert.equal(reads, 2);
+  assert.deepEqual([h.graph.claimPosts, h.graph.draftPosts,
+    h.graph.receiptPosts], [1, 0, 0]);
+});
+
+test('snapshot fence expiry at draft POST leaves the Claim occupied', async () => {
+  const h = harness();
+  h.writer._inspectLegacy = async () => ({occupied: null,
+    proofDigest: 'invented-proof', validUntilMs: Date.now() - 1});
+  await rejectsCode(() => h.flow.draft(WO),
+    'LEGACY_FENCE_UNVERIFIED');
+  assert.deepEqual([h.graph.claimPosts, h.graph.draftPosts,
+    h.graph.receiptPosts], [1, 0, 0]);
 });
 
 test('a Claim raced into the writer is reread as occupied without a second draft', async () => {

@@ -10,9 +10,11 @@ import {GraphClient} from
   '../../github_gantt_graph_actions_lean_source_only_20261122_v3/graph.mjs';
 import {LeanGanttActions} from
   '../../github_gantt_graph_actions_lean_source_only_20261122_v3/actions.mjs';
+import {createReleaseInventoryLoader} from
+  '../../github_gantt_graph_actions_lean_source_only_20261122_v3/legacy_team_inventory_fence.mjs';
 import {assertActiveConfig, SITE_URL} from
   '../../github_gantt_graph_actions_lean_source_only_20261122_v3/contract.mjs';
-import {GanttReleaseReader} from
+import {GanttReleaseReader, GANTT_RELEASE_KEY, GANTT_RELEASE_TITLE} from
   '../../gantt_github_snapshot_first_provider_flow_source_only_20261123_v4/release_reader.mjs';
 import {createSnapshotFirstProviderFlow} from
   '../../gantt_github_snapshot_first_provider_flow_source_only_20261123_v4/snapshot_first_provider_flow.mjs';
@@ -53,6 +55,7 @@ export function validateIntegrationConfig(config) {
   catch { fail('CUSTOMER_RUNTIME_NOT_RELEASED'); }
   const lean = config.lean;
   const snapshot = config.snapshot;
+  const legacy = config.legacyInventory;
   const ids = [snapshot.lists?.ganttRelease, lean.lists?.customerReleases,
     lean.lists?.claims, lean.lists?.receipts];
   if (lean.providerEnabled !== false || lean.customerEnabled !== true ||
@@ -73,6 +76,14 @@ export function validateIntegrationConfig(config) {
       !Array.isArray(snapshot.releaseOwnerOids) ||
       !snapshot.releaseOwnerOids.length ||
       !snapshot.releaseOwnerOids.every(value => GUID.test(value)) ||
+      legacy?.siteId !== lean.siteId ||
+      legacy.siteUrl !== SITE_URL ||
+      legacy.releaseListId?.toLowerCase() !==
+        snapshot.lists?.ganttRelease?.toLowerCase() ||
+      legacy.releaseListTitle !== GANTT_RELEASE_TITLE ||
+      legacy.releaseKey !== GANTT_RELEASE_KEY ||
+      !sameOidSet(legacy.ownerOids, snapshot.releaseOwnerOids) ||
+      !sameOidSet(legacy.ownerOids, lean.releaseOwnerOids) ||
       config.releaseSiteUrl !== SITE_URL ||
       config.encryptedPayloadUrl !== PAYLOAD_URL ||
       snapshot.encryptedPayloadUrl !== PAYLOAD_URL) {
@@ -98,10 +109,12 @@ export async function prepareIntegratedSite({config, loadAuthenticatedChart,
     createPublicClientApplication: msalFactory});
   const graph = new GraphClient({tokenProvider: auth.tokenProvider,
     fetchImpl});
+  const loadLegacyFenceProof = createReleaseInventoryLoader(
+    config.legacyInventory, now);
   const customerActions = new LeanGanttActions({config: config.lean,
-    graph, now});
+    graph, now, loadLegacyFenceProof});
   const writer = new SnapshotProviderActionWriter({config: config.snapshot,
-    graph, now});
+    graph, now, loadLegacyFenceProof});
   // The Release reader binds the same pinned account for every selected
   // Graph GET. Its row/ETag and served chart are reread before the first POST.
   const releaseGraph = Object.freeze({request: (path, options) =>

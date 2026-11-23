@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {existsSync, readFileSync} from 'node:fs';
+import {existsSync, readFileSync, readdirSync} from 'node:fs';
 import {join} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 
@@ -27,6 +27,7 @@ assert.equal(config.enabled, false);
 assert.equal(config.auth.enabled, false);
 assert.equal(config.lean.enabled, false);
 assert.equal(config.snapshot.enabled, false);
+assert.equal(config.legacyInventory, null);
 assert.equal(config.lean.providerEnabled, false);
 assert.equal(config.lean.customerEnabled, false);
 assert.equal(config.snapshot.providerSnapshotEnabled, false);
@@ -55,10 +56,13 @@ for (const id of ['signInAction', 'verifyAction', 'providerDraftAction',
   assert.ok(new RegExp(`<button id="${id}"[^>]*\\bdisabled\\b`, 'u').test(html),
     `${id} must be checked in disabled`);
 }
-assert.ok(html.includes('/arbys-coordinator-gantt/assets/app-CfZrTyWg.js'));
+assert.ok(html.includes('/arbys-coordinator-gantt/assets/app-MMTKfleV.js'));
 assert.ok(html.includes('sandbox="allow-scripts allow-popups'));
+assert.deepEqual(readdirSync(join(root, 'assets')).filter(name =>
+  /^app-[A-Za-z0-9_-]+\.js$/u.test(name)), ['app-MMTKfleV.js'],
+  'only the reviewed app bundle may remain at the Pages root');
 
-for (const filename of ['app-CfZrTyWg.js', 'Configuration-B1Fwyfg7.js',
+for (const filename of ['app-MMTKfleV.js', 'Configuration-B1Fwyfg7.js',
   'redirect-Ck1ZdWvy.js']) {
   const bundle = readFileSync(join(root, 'assets', filename), 'utf8');
   assert.ok(!/Mail\.Send\b/iu.test(bundle),

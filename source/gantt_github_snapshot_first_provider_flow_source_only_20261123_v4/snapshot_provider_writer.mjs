@@ -11,6 +11,8 @@ import {buildProviderDraft, canonicalSalesforceId, email,
   '../github_gantt_graph_actions_lean_source_only_20261122_v3/contract.mjs';
 import {correlationIdOf, GraphHttpError, recipientsOf} from
   '../github_gantt_graph_actions_lean_source_only_20261122_v3/graph.mjs';
+import {inspectLegacyPilots, legacyPilotFence} from
+  '../github_gantt_graph_actions_lean_source_only_20261122_v3/legacy_team_inventory_fence.mjs';
 import {buildSnapshotProviderContent} from './snapshot_first_provider_flow.mjs';
 import {GANTT_RELEASE_KEY} from './release_reader.mjs';
 import {SnapshotClaimReceiptStore, SNAPSHOT_CLAIM_MODE} from
@@ -25,6 +27,10 @@ const same = (a, b) => JSON.stringify([...a].sort()) ===
   JSON.stringify([...b].sort());
 
 function fail(code) { throw new HeldActionError(code); }
+function occupiedForCaller(fenced) {
+  return {status: 'legacy_occupied', dispatchKey: fenced.dispatchKey,
+    reason: 'OWNER_RECONCILIATION_REQUIRED'};
+}
 function object(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
@@ -174,7 +180,8 @@ function actualLinks(message, ParserCtor) {
 export class SnapshotProviderActionWriter {
   constructor({config, graph, now = () => Date.now(),
       randomUUID = () => globalThis.crypto.randomUUID(),
-      domParserClass = globalThis.DOMParser} = {}) {
+      domParserClass = globalThis.DOMParser,
+      loadLegacyFenceProof} = {}) {
     if (typeof graph?.bindAccount !== 'function' ||
         typeof randomUUID !== 'function' || typeof now !== 'function') {
       throw new TypeError('Bound delegated Graph writer is required');
@@ -184,6 +191,17 @@ export class SnapshotProviderActionWriter {
     this.now = now;
     this.randomUUID = randomUUID;
     this.domParserClass = domParserClass;
+    this.loadLegacyFenceProof = loadLegacyFenceProof;
+  }
+
+  async _legacyFence(dispatchKey, graph) {
+    return legacyPilotFence(dispatchKey, graph, this.config.siteId,
+      this.loadLegacyFenceProof);
+  }
+
+  async _inspectLegacy(dispatchKey, graph, expectedProofDigest = null) {
+    return inspectLegacyPilots(dispatchKey, graph, this.config.siteId,
+      this.loadLegacyFenceProof, expectedProofDigest);
   }
 
   async _context(requestedActor) {
@@ -212,15 +230,19 @@ export class SnapshotProviderActionWriter {
     idFromKey(dispatchKey);
     const context = await this._context(actor);
     const state = await context.store.getState(dispatchKey);
-    if (!state) return {status: 'absent', dispatchKey};
-    if (state.sent) return {status: 'sent_recorded_unverified', dispatchKey};
-    if (state.claim.fields.MigratedFrom) return {status: 'legacy_occupied', dispatchKey};
-    if (state.claim.fields.ActorOid.toLowerCase() !== context.actor.id ||
-        state.claim.fields.ActorEmail !== context.actor.address) {
-      return {status: 'draft_status_unverified', dispatchKey};
+    if (state) {
+      if (state.sent) return {status: 'sent_recorded_unverified', dispatchKey};
+      if (state.claim.fields.MigratedFrom) return {status: 'legacy_occupied', dispatchKey};
+      if (state.claim.fields.ActorOid.toLowerCase() !== context.actor.id ||
+          state.claim.fields.ActorEmail !== context.actor.address) {
+        return {status: 'draft_status_unverified', dispatchKey};
+      }
+      return {status: state.draft ? 'draft_occupied' :
+        'claim_outcome_unverified', dispatchKey};
     }
-    return {status: state.draft ? 'draft_occupied' :
-      'claim_outcome_unverified', dispatchKey};
+    const fenced = await this._legacyFence(dispatchKey, context.graph);
+    if (fenced) return occupiedForCaller(fenced);
+    return {status: 'absent', dispatchKey};
   }
 
   async _existing(state, context) {
@@ -248,8 +270,10 @@ export class SnapshotProviderActionWriter {
     idFromKey(dispatchKey);
     const context = await this._context(actor);
     const state = await context.store.getState(dispatchKey);
-    return state ? this._existing(state, context) :
-      {status: 'not_started', dispatchKey};
+    if (state) return this._existing(state, context);
+    const fenced = await this._legacyFence(dispatchKey, context.graph);
+    if (fenced) return occupiedForCaller(fenced);
+    return {status: 'not_started', dispatchKey};
   }
 
   async createFirstDraft(command) {
@@ -279,6 +303,9 @@ export class SnapshotProviderActionWriter {
       const existing = await this._existing(before, context);
       return Object.freeze({...existing, reusedExistingClaim: true});
     }
+    const pilot = await this._inspectLegacy(command.dispatchKey,
+      context.graph);
+    if (pilot.occupied) return occupiedForCaller(pilot.occupied);
     const source = sourceForClaim(command);
     source.digest = await sha256(source.etagsJson);
     const attemptId = this.randomUUID();
@@ -299,16 +326,23 @@ export class SnapshotProviderActionWriter {
       fail('SNAPSHOT_SOURCE_CHANGED_AFTER_CLAIM');
     }
     await this._sameActor(context);
+    const postClaimPilot = await this._inspectLegacy(command.dispatchKey,
+      context.graph, pilot.proofDigest);
+    if (postClaimPilot.occupied) fail('LEGACY_OCCUPIED_AFTER_CLAIM');
     let created;
     try {
       created = await context.graph.createDraft(command.content, correlationId,
         () => {
+          if (Date.now() >= postClaimPilot.validUntilMs) {
+            fail('LEGACY_FENCE_UNVERIFIED');
+          }
           if (this.now() >= Date.parse(post.validUntilUtc)) {
             fail('SNAPSHOT_SOURCE_EXPIRED_BEFORE_DRAFT');
           }
         });
     } catch (error) {
-      if (error?.code === 'SNAPSHOT_SOURCE_EXPIRED_BEFORE_DRAFT') throw error;
+      if (['SNAPSHOT_SOURCE_EXPIRED_BEFORE_DRAFT',
+        'LEGACY_FENCE_UNVERIFIED'].includes(error?.code)) throw error;
       fail('DRAFT_OUTCOME_UNKNOWN');
     }
     const message = await context.graph.getMessage(created.id);
@@ -351,8 +385,10 @@ export class SnapshotProviderActionWriter {
     idFromKey(dispatchKey);
     const context = await this._context(actor);
     const state = await context.store.getState(dispatchKey);
-    return state ? this._existing(state, context) :
-      {status: 'not_started', dispatchKey};
+    if (state) return this._existing(state, context);
+    const fenced = await this._legacyFence(dispatchKey, context.graph);
+    if (fenced) return occupiedForCaller(fenced);
+    return {status: 'not_started', dispatchKey};
   }
 
   async _checkState(state, context) {

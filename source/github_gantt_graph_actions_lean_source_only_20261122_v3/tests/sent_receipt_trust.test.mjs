@@ -85,6 +85,10 @@ function fixture() {
       async appendSent() { receiptWrites++; }}};
   class Actions extends LeanGanttActions {
     async _context() { return context; }
+    // An expired/unavailable historical proof must never block an existing
+    // Claim's owner from reopening a draft or recording its actual Sent state.
+    async _legacyFence() { throw new Error('existing Claim reached legacy fence'); }
+    async _inspectLegacy() { throw new Error('existing Claim reached legacy inventory'); }
   }
   const actions = new Actions({config: {}, graph,
     domParserClass: BrowserParser});
@@ -122,6 +126,17 @@ test('owner confirms Sent only from matching live mailbox and stored receipt', a
   h.state.sent.fields.ActualBodySha256 = 'f'.repeat(64);
   await assert.rejects(h.actions.checkCustomerSent(FORM),
     {code: 'SENT_RECEIPT_CONFLICT'});
+});
+
+test('an unavailable legacy inventory does not block an owned existing Claim', async () => {
+  const h = fixture();
+  h.setActor(OWNER);
+  // Both inherited fence methods throw in this fixture. The existing Claim
+  // and verified mailbox receipt are sufficient for these return paths.
+  assert.equal((await h.actions.customerDraft(FORM)).status, 'sent');
+  assert.equal((await h.actions.checkCustomerSent(FORM)).status, 'sent');
+  assert.equal(h.mailboxReads(), 2);
+  assert.equal(h.receiptWrites(), 0);
 });
 
 test('forged Sent row with an unsent Draft stays held', async () => {

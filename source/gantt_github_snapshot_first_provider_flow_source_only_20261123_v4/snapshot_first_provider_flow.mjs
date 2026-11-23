@@ -469,6 +469,29 @@ export function createSnapshotFirstProviderFlow({enabled = false,
           verifySourceAfterClaim,
         }));
         if (afterClaimCalls === 0) {
+          if (result?.status === 'legacy_occupied' &&
+              result?.dispatchKey === key &&
+              result?.reusedExistingClaim !== true) {
+            // The owner-signed historical inventory may have changed after
+            // the last observe. No Claim was made by this attempt; confirm
+            // occupancy again before returning the held state.
+            const occupied = await observe(key, user);
+            if (occupied.status !== 'legacy_occupied') {
+              fail('LEGACY_OCCUPANCY_CHANGED');
+            }
+            const resumed = writerResult(await actionPort.resume(key, user));
+            if (resumed.status !== 'legacy_occupied' ||
+                resumed.dispatchKey !== key) {
+              fail('LEGACY_OCCUPANCY_CHANGED');
+            }
+            const resumedActor = await actor();
+            if (resumedActor.id !== user.id ||
+                resumedActor.address !== user.address) {
+              fail('COORDINATOR_CHANGED');
+            }
+            currentSelection(selectionPort, selection, id);
+            return resumed;
+          }
           if (result?.reusedExistingClaim !== true) {
             fail('POSTCLAIM_RECHECK_MISSING');
           }

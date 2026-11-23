@@ -42,6 +42,17 @@ from making a second first draft while the Sent state is unresolved. A
 closed GitHub page has no background listener and cannot record the send at
 the instant Outlook sends it.
 
+Every first-draft path also reads the same owner-signed historical-key
+inventory from the restricted Gantt Release row. The inventory must list all
+old draft/receipt sources and writers, including existing pilot keys; Tony and
+Harmony read this team-safe Release row through delegated Graph, not Ryan's
+old private Lists. The runtime rereads and binds the Release ETag after the
+unique Claim, checks expiry immediately before Outlook POST, and holds on a
+missing, changed, or occupied key. The checked-in `legacyInventory` binding is
+`null`, so this protection cannot activate without a reviewed signed receipt.
+An old writer restarted during the proof's validity window remains an
+operational risk until the old writers are durably retired or checked live.
+
 If the saved draft immutable ID returns 404 after a coordinator sends it in
 Outlook, the draft owner can make one bounded Sent Items reconciliation from
 five minutes before the shared Claim time. Only a unique copy with the exact
@@ -82,7 +93,7 @@ occupied key owned by another coordinator, and manual Check Sent. It verifies
 selection alone makes no draft call, invalid selection and iframe reload
 clear action eligibility, mobile width, and zero external requests. The fake
 variant is removed after the test and is not present in `dist`. The vendored
-provider V4 suite passes 35/35 tests, including a Claim appearing between the
+provider V4 suite passes 41/41 tests, including a Claim appearing between the
 caller and writer reads, and a rejected draft result that skips post-Claim
 verification. Its tests verify Release, Claim, six-link draft,
 cross-action privacy, reopening, and Sent behavior using invented data. A shared
@@ -101,6 +112,7 @@ the smoke's temporary invented asset into a publication package.
 | Entra | Register the exact SPA redirect `https://rbcochell-ui.github.io/arbys-coordinator-gantt/auth/redirect.html`; verify delegated `User.Read`, `Lists.SelectedOperations.Selected`, and `Mail.ReadWrite` for named coordinators. Run account switching and popup/redirect canaries. |
 | Lists | Provision and independently read back the restricted owner-write Gantt Release List plus customer Release, unique Claims, and unique Receipts Lists. Prove selected grants and effective actor ACLs, including coordinator Add/View with no Edit/Delete where proposed. The Gantt Release schema remains a proposal. |
 | Migration and privacy | Reconcile old pilot occupied keys and any V2 shared rows that stored raw Outlook links, subjects, free-text reasons, or customer capability URLs. Lean V3 and provider V4 reject incompatible legacy shapes; no automatic rewrite is included. |
+| Legacy fence | Inventory every historical draft/receipt source and old writer with complete page receipts, retire or check the old writers, issue a bounded P-256 signed proof in the restricted Release row, and verify Ryan/Tony/Harmony delegated reads plus pre/post Claim drift. A signed Off observation alone can go stale if a writer is restarted. |
 | Source and chart | Owner must approve a fresh exact ciphertext/decrypted HTML digest row. The deployed encrypted chart must carry reviewed allowlists covering intended eligible native WOs and FORM keys; the old pilot allowlist is too narrow for a team release. The published script hashes and selected chart version must be checked together. |
 | Browser policy | The inherited held CSP currently permits `connect-src 'self'` and `frame-src 'self' about:` only. Before live Graph/MSAL calls, review and test the minimal Microsoft Graph and Entra `connect-src`/`frame-src` allowlist for the actual tenant and token flow. The current CSP deliberately leaves live actions blocked even if a config Boolean is changed. |
 | Outlook and operations | Run delegated empty-To, two-role shared mailbox, six-link HTML/readback, immutable-ID, changed draft reopen, cross-user duplicate race, actual Sent Items, and missing-message canaries. A coordinator still checks current Thirsty and edits the Outlook draft before Send. |

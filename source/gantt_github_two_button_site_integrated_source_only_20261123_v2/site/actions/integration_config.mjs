@@ -8,6 +8,7 @@ export const INTEGRATION_CONFIG = Object.freeze({
   enabled: false,
   releaseSiteUrl: null,
   encryptedPayloadUrl: null,
+  legacyInventory: null,
   auth: Object.freeze({enabled: false, tenantId: null, clientId: null,
     coordinatorOids: Object.freeze([]), redirectUri: REDIRECT_URI}),
   lean: Object.freeze({

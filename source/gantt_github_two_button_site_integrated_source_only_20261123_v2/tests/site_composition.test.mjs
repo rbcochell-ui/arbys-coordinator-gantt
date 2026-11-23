@@ -10,6 +10,8 @@ import {PICOS_PARTS} from
   '../../github_gantt_graph_actions_lean_source_only_20261122_v3/contract.mjs';
 import {buildSnapshotProviderContent} from
   '../../gantt_github_snapshot_first_provider_flow_source_only_20261123_v4/snapshot_first_provider_flow.mjs';
+import {GANTT_RELEASE_KEY, GANTT_RELEASE_TITLE} from
+  '../../gantt_github_snapshot_first_provider_flow_source_only_20261123_v4/release_reader.mjs';
 import {sealSyntheticHtml} from './fixture_seal.mjs';
 
 const TENANT = '11111111-1111-4111-8111-111111111111';
@@ -47,6 +49,26 @@ function inventedConfig() {
     claims: LISTS.claims, receipts: LISTS.receipts});
   config.releaseSiteUrl = 'https://groups.coca-cola.com/sites/ArbysOperations';
   config.encryptedPayloadUrl = PAYLOAD_URL;
+  config.legacyInventory = {siteId: SITE_ID,
+    siteUrl: config.releaseSiteUrl,
+    releaseListId: LISTS.ganttRelease,
+    releaseListTitle: GANTT_RELEASE_TITLE,
+    releaseItemId: '1', releaseKey: GANTT_RELEASE_KEY,
+    ownerOids: [OWNER],
+    expectedSources: [
+      {listId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        title: 'Invented Provider Ledger'},
+      {listId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+        title: 'Invented Customer Releases'},
+      {listId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+        title: 'Invented Legacy Ledger'},
+    ],
+    expectedPilotLists: {provider: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      customer: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'},
+    expectedWriterIds: ['eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'],
+    signingPublicJwk: {kty: 'EC', crv: 'P-256',
+      x: 'A'.repeat(43), y: 'B'.repeat(43)},
+  };
   return config;
 }
 function fakeElements() {
@@ -64,6 +86,7 @@ test('checked-in site stays disabled without MSAL, Graph or a payload', async ()
   assert.equal(INTEGRATION_CONFIG.snapshot.enabled, false);
   assert.equal(INTEGRATION_CONFIG.encryptedPayloadUrl, null);
   assert.equal(INTEGRATION_CONFIG.lean.lists.claims, null);
+  assert.equal(INTEGRATION_CONFIG.legacyInventory, null);
   let called = false;
   const result = await prepareIntegratedSite({config: INTEGRATION_CONFIG,
     msalFactory: () => { called = true; throw new Error('must stay held'); },
@@ -83,6 +106,11 @@ test('active bindings require one identity, one unique List pair and exact Pages
     c => { c.lean.providerEnabled = true; },
     c => { c.snapshot.emptyToDraftCanaryPassed = null; },
     c => { c.lean.customerEnabled = false; },
+    c => { c.legacyInventory = null; },
+    c => { c.legacyInventory.siteId =
+      'groups.coca-cola.com,ffffffff-ffff-4fff-8fff-ffffffffffff,66666666-6666-4666-8666-666666666666'; },
+    c => { c.legacyInventory.releaseListId = LISTS.claims; },
+    c => { c.legacyInventory.ownerOids = [COORDINATOR]; },
   ]) {
     const bad = inventedConfig(); mutate(bad);
     assert.throws(() => validateIntegrationConfig(bad));

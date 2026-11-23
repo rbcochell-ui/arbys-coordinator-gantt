@@ -5,9 +5,15 @@ import {assertActiveConfig, buildCustomerDraft, buildProviderDraft,
 import {ClaimReceiptStore} from './claim_receipt_store.mjs';
 import {correlationIdOf, GraphHttpError, recipientsOf} from './graph.mjs';
 import {CustomerReleaseResolver} from './customer_source.mjs';
+import {inspectLegacyPilots, legacyPilotFence} from
+  './legacy_team_inventory_fence.mjs';
 import {ProviderSourceResolver} from './provider_source.mjs';
 
 function fail(code) { throw new HeldActionError(code); }
+function occupiedForCaller(fenced) {
+  return {status: 'legacy_occupied', dispatchKey: fenced.dispatchKey,
+    reason: 'OWNER_RECONCILIATION_REQUIRED'};
+}
 const same = (a, b) => JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
 const SHA_MARKER = /^sha256:([0-9a-f]{64})$/;
 const sharedSentReview = value => value ? 'SENT_DETAILS_CHANGED' : '';
@@ -239,7 +245,8 @@ async function inspectExistingDraft(message, evidence, claim, draftsFolderId,
 export class LeanGanttActions {
   constructor({config, graph, now = () => Date.now(),
       randomUUID = () => globalThis.crypto.randomUUID(),
-      domParserClass = globalThis.DOMParser}) {
+      domParserClass = globalThis.DOMParser,
+      loadLegacyFenceProof}) {
     if (typeof graph?.bindAccount !== 'function' ||
         typeof randomUUID !== 'function') throw new TypeError('Bound delegated Graph is required');
     this.config = config;
@@ -247,6 +254,17 @@ export class LeanGanttActions {
     this.now = now;
     this.randomUUID = randomUUID;
     this.domParserClass = domParserClass;
+    this.loadLegacyFenceProof = loadLegacyFenceProof;
+  }
+
+  async _legacyFence(dispatchKey, graph) {
+    return legacyPilotFence(dispatchKey, graph, this.config.siteId,
+      this.loadLegacyFenceProof);
+  }
+
+  async _inspectLegacy(dispatchKey, graph, expectedProofDigest = null) {
+    return inspectLegacyPilots(dispatchKey, graph, this.config.siteId,
+      this.loadLegacyFenceProof, expectedProofDigest);
   }
 
   async _context(action = 'provider') {
@@ -319,6 +337,12 @@ export class LeanGanttActions {
         webLink: null, reviewReason: sharedSentReview(
           state.sent?.fields.ReviewReason)};
     }
+    // Historical inventory only guards an unclaimed first draft. An existing
+    // Claim remains usable for its owner's draft and Sent receipt checks.
+    const fenced = await this._legacyFence(dispatchKey, context.graph);
+    if (fenced) return {kind, id, dispatchKey, status: fenced.status,
+      to: [], cc: [], recipientReviewRequired: false,
+      webLink: null, reviewReason: fenced.reason};
     const source = await context.source.resolve(id, context.actor);
     const draft = kind === 'provider' ? buildProviderDraft(source) :
       buildCustomerDraft(source);
@@ -338,6 +362,8 @@ export class LeanGanttActions {
     const context = await this._context('provider');
     const existing = await context.store.getState(key);
     if (existing) return this._existingAction(existing, context);
+    const pilot = await this._inspectLegacy(key, context.graph);
+    if (pilot.occupied) return occupiedForCaller(pilot.occupied);
 
     const source = await context.source.resolve(id, context.actor);
     const content = buildProviderDraft(source);
@@ -350,15 +376,22 @@ export class LeanGanttActions {
     // uncertain result leaves that Claim occupied and cannot mint a new draft.
     const current = await context.source.confirmUnchanged(source, context.actor);
     await this._sameActor(context);
+    const postClaimPilot = await this._inspectLegacy(key, context.graph,
+      pilot.proofDigest);
+    if (postClaimPilot.occupied) fail('LEGACY_OCCUPIED_AFTER_CLAIM');
     let created;
     try {
       created = await context.graph.createDraft(content, correlationId, () => {
+        if (Date.now() >= postClaimPilot.validUntilMs) {
+          fail('LEGACY_FENCE_UNVERIFIED');
+        }
         if (this.now() >= Math.min(source.validUntilMs, current.validUntilMs)) {
           fail('SOURCE_WINDOW_EXPIRED_BEFORE_DRAFT');
         }
       });
     } catch (error) {
-      if (error?.code === 'SOURCE_WINDOW_EXPIRED_BEFORE_DRAFT') throw error;
+      if (['SOURCE_WINDOW_EXPIRED_BEFORE_DRAFT',
+        'LEGACY_FENCE_UNVERIFIED'].includes(error?.code)) throw error;
       fail('DRAFT_OUTCOME_UNKNOWN');
     }
     const evidence = {...content, id: created.id, webLink: null};
@@ -380,9 +413,12 @@ export class LeanGanttActions {
   async checkSent(nativeWoId) {
     const id = canonicalSalesforceId(nativeWoId);
     const context = await this._context('provider');
-    const state = await context.store.getState(providerDispatchKey(id));
-    if (!state) return {status: 'not_started'};
-    return this._existingAction(state, context);
+    const key = providerDispatchKey(id);
+    const state = await context.store.getState(key);
+    if (state) return this._existingAction(state, context);
+    const fenced = await this._legacyFence(key, context.graph);
+    if (fenced) return occupiedForCaller(fenced);
+    return {status: 'not_started'};
   }
 
   async _checkState(state, context) {
@@ -532,6 +568,8 @@ export class LeanGanttActions {
     const context = await this._context('customer');
     const existing = await context.store.getState(dispatchKey);
     if (existing) return this._existingAction(existing, context);
+    const pilot = await this._inspectLegacy(dispatchKey, context.graph);
+    if (pilot.occupied) return occupiedForCaller(pilot.occupied);
 
     const source = await context.source.resolve(key, context.actor);
     const content = buildCustomerDraft(source);
@@ -541,15 +579,22 @@ export class LeanGanttActions {
       source, attemptId, correlationId);
     const current = await context.source.confirmUnchanged(source, context.actor);
     await this._sameActor(context);
+    const postClaimPilot = await this._inspectLegacy(dispatchKey, context.graph,
+      pilot.proofDigest);
+    if (postClaimPilot.occupied) fail('LEGACY_OCCUPIED_AFTER_CLAIM');
     let created;
     try {
       created = await context.graph.createDraft(content, correlationId, () => {
+        if (Date.now() >= postClaimPilot.validUntilMs) {
+          fail('LEGACY_FENCE_UNVERIFIED');
+        }
         if (this.now() >= Math.min(source.validUntilMs, current.validUntilMs)) {
           fail('RELEASE_WINDOW_EXPIRED_BEFORE_DRAFT');
         }
       });
     } catch (error) {
-      if (error?.code === 'RELEASE_WINDOW_EXPIRED_BEFORE_DRAFT') throw error;
+      if (['RELEASE_WINDOW_EXPIRED_BEFORE_DRAFT',
+        'LEGACY_FENCE_UNVERIFIED'].includes(error?.code)) throw error;
       fail('DRAFT_OUTCOME_UNKNOWN');
     }
     const evidence = {...content, id: created.id, webLink: null};
@@ -568,9 +613,12 @@ export class LeanGanttActions {
   async checkCustomerSent(formSourceKey) {
     const key = canonicalFormSourceKey(formSourceKey);
     const context = await this._context('customer');
-    const state = await context.store.getState(customerDispatchKey(key));
-    if (!state) return {status: 'not_started'};
-    return this._existingAction(state, context);
+    const dispatchKey = customerDispatchKey(key);
+    const state = await context.store.getState(dispatchKey);
+    if (state) return this._existingAction(state, context);
+    const fenced = await this._legacyFence(dispatchKey, context.graph);
+    if (fenced) return occupiedForCaller(fenced);
+    return {status: 'not_started'};
   }
 }
 
