@@ -26,5 +26,7 @@ The current build comes from
 `source/gantt_github_two_button_site_integrated_source_only_20261123_v4_verified_prefill`.
 Its only other runtime source packages are the V7 provider flow, lean Graph V3
 actions, and provider snapshot resolver under `source/`. The pinned build and
-public-file checks are in `scripts/`. The GitHub workflow tests only these
-current packages and verifies the disabled, encrypted artifact.
+public-file checks are in `scripts/`. The focused tests and checks were run
+locally. This review branch omits a GitHub Actions workflow because the
+available GitHub OAuth session cannot create or update workflow files; the
+full workflow remains on the separate local branch.
