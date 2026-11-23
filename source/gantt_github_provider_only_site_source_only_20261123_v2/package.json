@@ -1,0 +1,17 @@
+{
+  "name": "arbys-gantt-provider-only-site-held-v2",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "build": "vite build",
+    "smoke": "node tests/rendered_smoke.mjs"
+  },
+  "dependencies": {
+    "@azure/msal-browser": "5.30.0"
+  },
+  "devDependencies": {
+    "playwright-core": "1.56.1",
+    "vite": "8.3.8"
+  }
+}
