@@ -31,7 +31,7 @@ class BrowserParser {
 function fixture() {
   const claim = {fields: {ActionKind: 'customer-tracker', DispatchKey: KEY,
     EntityId: FORM, ActorOid: OWNER.id, ActorEmail: OWNER.address,
-    CorrelationId: CORRELATION}};
+    CorrelationId: CORRELATION, ClaimedAtUtc: '2026-11-23T09:00:00.000Z'}};
   const draft = {fields: {DraftImmutableId: MESSAGE_ID,
     IntendedSubject: SUBJECT,
     IntendedToJson: JSON.stringify(['customer@example.invalid']),
@@ -55,16 +55,26 @@ function fixture() {
     internetMessageHeaders: [{name: 'x-arbys-correlation-id',
       value: CORRELATION}]};
   let mailboxReads = 0;
+  let scanReads = 0;
   let receiptWrites = 0;
   let actor = OTHER;
   let missingMessage = false;
+  let recoveredId = null;
+  let scanError = null;
   const graph = {
     bindAccount() { return this; },
     async getMe() { return actor; },
-    async getMessage() {
+    async getMessage(id) {
       mailboxReads++;
-      if (missingMessage) throw new GraphHttpError(404);
+      if (missingMessage && id === MESSAGE_ID) throw new GraphHttpError(404);
       return structuredClone(message);
+    },
+    async findSentByCorrelation(correlationId, claimedAtUtc) {
+      scanReads++;
+      assert.equal(correlationId, CORRELATION);
+      assert.equal(claimedAtUtc, claim.fields.ClaimedAtUtc);
+      if (scanError) throw scanError;
+      return recoveredId;
     },
     async getFolderId(kind) { return `folder-${kind}`; },
     async createDraft() { throw new Error('second draft forbidden'); },
@@ -81,7 +91,10 @@ function fixture() {
   return {actions, state, message, context,
     setActor(value) { actor = value; context.actor = value; },
     setMissingMessage(value) { missingMessage = value; },
+    setRecoveredId(value) { recoveredId = value; },
+    setScanError(value) { scanError = value; },
     mailboxReads: () => mailboxReads,
+    scanReads: () => scanReads,
     receiptWrites: () => receiptWrites};
 }
 
@@ -129,5 +142,53 @@ test('lost original immutable ID stays unresolved without inferring Sent', async
   h.setMissingMessage(true);
   assert.equal((await h.actions.checkCustomerSent(FORM)).status,
     'unresolved');
+  assert.equal(h.receiptWrites(), 0);
+});
+
+test('owner can verify a uniquely correlated Sent copy with a changed immutable ID', async () => {
+  const h = fixture();
+  h.setActor(OWNER);
+  h.setMissingMessage(true);
+  const alternateId = 'immutable-sent-copy-invented';
+  h.setRecoveredId(alternateId);
+  h.message.id = alternateId;
+  h.state.sent.fields.SentImmutableId = alternateId;
+  assert.equal((await h.actions.checkCustomerSent(FORM)).status, 'sent');
+  assert.equal(h.mailboxReads(), 2);
+  assert.equal(h.scanReads(), 0);
+  assert.equal(h.receiptWrites(), 0);
+});
+
+test('new Sent receipt is appended only after alternate ID mailbox proof', async () => {
+  const h = fixture();
+  h.setActor(OWNER);
+  h.setMissingMessage(true);
+  const alternateId = 'immutable-sent-copy-invented';
+  h.setRecoveredId(alternateId);
+  h.message.id = alternateId;
+  h.state.sent = null;
+  assert.equal((await h.actions.checkCustomerSent(FORM)).status, 'sent');
+  assert.equal(h.receiptWrites(), 1);
+  assert.equal(h.scanReads(), 1);
+});
+
+test('ambiguous fallback never logs Sent or frees the occupied key', async () => {
+  const h = fixture();
+  h.setActor(OWNER);
+  h.setMissingMessage(true);
+  h.setScanError(new Error('ambiguous'));
+  assert.equal((await h.actions.checkCustomerSent(FORM)).status, 'unresolved');
+  assert.equal(h.receiptWrites(), 0);
+});
+
+test('fallback candidate must still be a correlated Sent Items message', async () => {
+  const h = fixture();
+  h.setActor(OWNER);
+  h.setMissingMessage(true);
+  h.setRecoveredId('immutable-sent-copy-invented');
+  h.message.id = 'immutable-sent-copy-invented';
+  h.message.isDraft = true;
+  await assert.rejects(h.actions.checkCustomerSent(FORM),
+    {code: 'SENT_SCAN_NOT_SENT'});
   assert.equal(h.receiptWrites(), 0);
 });

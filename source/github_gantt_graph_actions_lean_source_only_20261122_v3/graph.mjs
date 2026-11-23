@@ -12,6 +12,11 @@ export class GraphHttpError extends Error {
 const allowedScopeSets = new Set(Object.values(GRAPH_SCOPES).map(v => JSON.stringify(v)));
 const itemPost = /^\/v1\.0\/sites\/[^/]+\/lists\/[0-9a-f-]{36}\/items$/i;
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const SENT_SCAN_PAGE_SIZE = 25;
+const SENT_SCAN_MAX_PAGES = 20;
+const SENT_SCAN_SELECT = 'id,internetMessageHeaders,sentDateTime';
+const SENT_SCAN_ORDER = 'sentDateTime desc';
+const SENT_SCAN_PATH = '/v1.0/me/mailFolders/sentitems/messages';
 
 /** Delegated-only Graph transport. There is no send, update, delete, or retry path. */
 export class GraphClient {
@@ -129,6 +134,75 @@ export class GraphClient {
       scopes: GRAPH_SCOPES.mail, headers: {Prefer: 'IdType="ImmutableId"'},
     });
     return r.data;
+  }
+
+  /**
+   * Outlook UI may create a Sent Items copy with a different immutable ID.
+   * Scan only this delegated user's Sent Items for the draft's opaque header.
+   * A partial scan or duplicate header is never evidence that mail was sent.
+   */
+  async findSentByCorrelation(correlationId, claimedAtUtc) {
+    if (!GUID.test(correlationId ?? '') ||
+        typeof claimedAtUtc !== 'string' ||
+        !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(claimedAtUtc) ||
+        !Number.isFinite(Date.parse(claimedAtUtc)) ||
+        new Date(claimedAtUtc).toISOString() !== claimedAtUtc) {
+      throw new HeldActionError('SENT_SCAN_INPUT_INVALID');
+    }
+    const filter = `sentDateTime ge ${claimedAtUtc}`;
+    const parameters = new URLSearchParams({
+      '$select': SENT_SCAN_SELECT, '$filter': filter,
+      '$orderby': SENT_SCAN_ORDER, '$top': String(SENT_SCAN_PAGE_SIZE),
+    });
+    let path = `${SENT_SCAN_PATH}?${parameters}`;
+    const visited = new Set();
+    const matches = new Set();
+    for (let page = 0; page < SENT_SCAN_MAX_PAGES; page++) {
+      if (visited.has(path)) throw new HeldActionError('SENT_SCAN_INCOMPLETE');
+      visited.add(path);
+      const response = await this.request(path, {
+        scopes: GRAPH_SCOPES.mail,
+        headers: {Prefer: 'IdType="ImmutableId"'},
+      });
+      const data = response.data;
+      if (response.status !== 200 || !Array.isArray(data?.value) ||
+          data.value.length > SENT_SCAN_PAGE_SIZE) {
+        throw new HeldActionError('SENT_SCAN_INCOMPLETE');
+      }
+      for (const item of data.value) {
+        if (typeof item?.id !== 'string' || item.id.length < 8 ||
+            item.id.length > 2048 ||
+            !Array.isArray(item.internetMessageHeaders) ||
+            !Number.isFinite(Date.parse(item.sentDateTime ?? ''))) {
+          throw new HeldActionError('SENT_SCAN_INCOMPLETE');
+        }
+        if (correlationIdOf(item) === correlationId) matches.add(item.id);
+      }
+      if (!data['@odata.nextLink']) {
+        if (matches.size > 1) throw new HeldActionError('SENT_SCAN_AMBIGUOUS');
+        return [...matches][0] ?? null;
+      }
+      let next;
+      try { next = new URL(data['@odata.nextLink']); }
+      catch { throw new HeldActionError('SENT_SCAN_INCOMPLETE'); }
+      const keys = [...next.searchParams.keys()];
+      const allowedKeys = new Set(['$select', '$filter', '$orderby',
+        '$top', '$skiptoken', '$skip']);
+      if (next.origin !== 'https://graph.microsoft.com' ||
+          next.pathname.toLowerCase() !== SENT_SCAN_PATH.toLowerCase() ||
+          keys.some(key => !allowedKeys.has(key)) ||
+          new Set(keys).size !== keys.length ||
+          next.searchParams.get('$select') !== SENT_SCAN_SELECT ||
+          next.searchParams.get('$filter') !== filter ||
+          next.searchParams.get('$orderby') !== SENT_SCAN_ORDER ||
+          next.searchParams.get('$top') !== String(SENT_SCAN_PAGE_SIZE) ||
+          !next.searchParams.has('$skiptoken') &&
+            !next.searchParams.has('$skip')) {
+        throw new HeldActionError('SENT_SCAN_INCOMPLETE');
+      }
+      path = next.pathname + next.search;
+    }
+    throw new HeldActionError('SENT_SCAN_INCOMPLETE');
   }
 }
 

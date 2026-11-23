@@ -217,7 +217,8 @@ export class ClaimReceiptStore {
       const cc = storedRecipients(s.ActualCcJson);
       const bcc = storedRecipients(s.ActualBccJson);
       if (s.DraftImmutableId !== draft.fields.DraftImmutableId ||
-          s.SentImmutableId !== draft.fields.DraftImmutableId ||
+          typeof s.SentImmutableId !== 'string' ||
+          s.SentImmutableId.length < 8 || s.SentImmutableId.length > 2048 ||
           !SHA_MARKER.test(s.ActualSubject ?? '') ||
           !SHA.test(s.ActualBodySha256 ?? '') ||
           !SHA.test(s.ActualLinksSha256 ?? '') ||
