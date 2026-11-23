@@ -54,10 +54,10 @@ for (const id of ['signInAction', 'verifyAction', 'providerDraftAction',
   assert.ok(new RegExp(`<button id="${id}"[^>]*\\bdisabled\\b`, 'u').test(html),
     `${id} must be checked in disabled`);
 }
-assert.ok(html.includes('/arbys-coordinator-gantt/assets/app-CA-2SDVG.js'));
+assert.ok(html.includes('/arbys-coordinator-gantt/assets/app-CNOTD9G9.js'));
 assert.ok(html.includes('sandbox="allow-scripts allow-popups'));
 
-for (const filename of ['app-CA-2SDVG.js', 'Configuration-B1Fwyfg7.js',
+for (const filename of ['app-CNOTD9G9.js', 'Configuration-B1Fwyfg7.js',
   'redirect-Ck1ZdWvy.js']) {
   const bundle = readFileSync(join(root, 'assets', filename), 'utf8');
   assert.ok(!/Mail\.Send\b|mmalhotra|7mhd\.com|lschoonover|k79installs|9280134|1671777980/iu.test(bundle),

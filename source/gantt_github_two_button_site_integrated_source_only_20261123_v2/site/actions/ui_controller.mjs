@@ -100,6 +100,11 @@ export function createCoordinatorActionUi({runtime, elements, getBridge,
   let signedIn = false;
   let busyAction = false;
   let disposed = false;
+  let draftSelection = null;
+  let awayArmed = false;
+  let returnCheckPending = false;
+  let occupiedCheckEpoch = -1;
+  const hostDocument = hostWindow?.document ?? null;
 
   toReview.readOnly = true;
   ccReview.readOnly = true;
@@ -173,6 +178,11 @@ export function createCoordinatorActionUi({runtime, elements, getBridge,
       toReview.value = preview.to.join('; ');
       ccReview.value = preview.cc.join('; ');
       setStatus(previewMessage(preview));
+      if (preview.status === 'draft_occupied' &&
+          occupiedCheckEpoch !== epoch) {
+        occupiedCheckEpoch = epoch;
+        returnCheckPending = true;
+      }
     } catch (error) {
       if (stillCurrent(target, epoch) && sequence === previewSequence) {
         clearPreview();
@@ -182,6 +192,7 @@ export function createCoordinatorActionUi({runtime, elements, getBridge,
       if (stillCurrent(target, epoch) && sequence === previewSequence) {
         previewLoading = false;
         render();
+        maybeAutoCheckSent();
       }
     }
   }
@@ -190,6 +201,9 @@ export function createCoordinatorActionUi({runtime, elements, getBridge,
     selectionEpoch += 1;
     previewSequence += 1;
     previewLoading = false;
+    draftSelection = null;
+    returnCheckPending = false;
+    awayArmed = false;
     selected = value ? {kind: value.kind, id: value.id} : null;
     clearPreview();
     selectedIdentity.textContent = selected
@@ -226,6 +240,7 @@ export function createCoordinatorActionUi({runtime, elements, getBridge,
         if (startedAtEpoch !== selectionEpoch && signedIn && selected) {
           void loadPreview();
         }
+        maybeAutoCheckSent();
       }
     }
   }
@@ -272,6 +287,62 @@ export function createCoordinatorActionUi({runtime, elements, getBridge,
       throw held('ACTION_RESULT_UNVERIFIED');
     }
   }
+  function rememberDraftResult(result, target) {
+    if (result?.state === 'draft') draftSelection = {...target};
+    if (result?.state === 'sent' || result?.state === 'sent_with_changes') {
+      draftSelection = null;
+    }
+  }
+  async function autoCheckSent(target, epoch) {
+    busyAction = true;
+    clearDraftLink();
+    setStatus('Checking Outlook Sent Items for this exact selection…');
+    render();
+    try {
+      const result = await runtime.verifySentBySelection(target.kind, target.id);
+      if (!stillCurrent(target, epoch)) return;
+      showResult(result);
+      rememberDraftResult(result, target);
+    } catch (error) {
+      if (stillCurrent(target, epoch)) {
+        setStatus(`Sent check held: ${safeCode(error)}. Use Check Sent to retry.`);
+      }
+    } finally {
+      busyAction = false;
+      if (!disposed) {
+        render();
+        if (epoch !== selectionEpoch && signedIn && selected) {
+          void loadPreview();
+        }
+        maybeAutoCheckSent();
+      }
+    }
+  }
+  function maybeAutoCheckSent() {
+    if (!returnCheckPending || !enabled || !signedIn || disposed ||
+        busyAction || previewLoading || !selected ||
+        hostDocument?.visibilityState === 'hidden' ||
+        !sameSelection(selected, getBridge()?.getSelection())) return;
+    returnCheckPending = false;
+    if (!sameSelection(draftSelection, selected) &&
+        !(previewState?.epoch === selectionEpoch &&
+          previewState.preview.status === 'draft_occupied')) return;
+    void autoCheckSent({...selected}, selectionEpoch);
+  }
+  function onAway() {
+    if (enabled && signedIn && !disposed && selected) awayArmed = true;
+  }
+  function onReturn() {
+    if (!awayArmed || !enabled || !signedIn || disposed || !selected ||
+        hostDocument?.visibilityState === 'hidden') return;
+    awayArmed = false;
+    returnCheckPending = true;
+    maybeAutoCheckSent();
+  }
+  function onVisibilityChange() {
+    if (hostDocument?.visibilityState === 'hidden') onAway();
+    else onReturn();
+  }
   async function onDraft(kind, event, button) {
     let popup = null;
     if (enabled && !button.disabled && event?.isTrusted === true) {
@@ -291,6 +362,7 @@ export function createCoordinatorActionUi({runtime, elements, getBridge,
         : await runtime.createOrOpenCustomerDraft(target.id);
       if (!stillCurrent(target, epoch)) { popup?.close(); return; }
       showResult(result, popup, true);
+      rememberDraftResult(result, target);
     });
     // A failed or programmatic click must not leave an empty reserved tab.
     if (popup && !openDraftLink.href) popup.close();
@@ -306,6 +378,7 @@ export function createCoordinatorActionUi({runtime, elements, getBridge,
       const result = await runtime.verifySentBySelection(target.kind, target.id);
       if (!stillCurrent(target, epoch)) return;
       showResult(result);
+      rememberDraftResult(result, target);
     });
   }
 
@@ -316,6 +389,9 @@ export function createCoordinatorActionUi({runtime, elements, getBridge,
   providerDraftAction.addEventListener('click', onProviderDraft);
   customerDraftAction.addEventListener('click', onCustomerDraft);
   checkSentAction.addEventListener('click', onCheckSent);
+  hostWindow?.addEventListener?.('blur', onAway);
+  hostWindow?.addEventListener?.('focus', onReturn);
+  hostDocument?.addEventListener?.('visibilitychange', onVisibilityChange);
   heldReason.textContent = enabled
     ? 'This page makes editable Outlook drafts. Send and recipient edits stay in Outlook.'
     : HELD_COPY;
@@ -333,6 +409,9 @@ export function createCoordinatorActionUi({runtime, elements, getBridge,
       providerDraftAction.removeEventListener('click', onProviderDraft);
       customerDraftAction.removeEventListener('click', onCustomerDraft);
       checkSentAction.removeEventListener('click', onCheckSent);
+      hostWindow?.removeEventListener?.('blur', onAway);
+      hostWindow?.removeEventListener?.('focus', onReturn);
+      hostDocument?.removeEventListener?.('visibilitychange', onVisibilityChange);
       clearPreview();
       render();
     },

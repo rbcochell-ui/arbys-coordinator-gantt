@@ -143,12 +143,15 @@ try {
   // Vite replaces only the two composition imports for this temporary build.
   // Checked-in config remains disabled and no Graph or Outlook request exists.
   const fakeCompose = `globalThis.__fakeCalls=[];
+globalThis.__fakePreviewStatus=Object.create(null);
 export async function prepareIntegratedSite({panelElements}) {
   const calls=globalThis.__fakeCalls;
   const adapter={enabled:true,
     async signInFromClick(){calls.push(['signIn']);},
-    async preview(kind,id){calls.push(['preview',kind,id]);return {kind,id,
-      status:'eligible',canDraft:true,validUntilUtc:'2099-01-01T00:00:00Z',
+    async preview(kind,id){calls.push(['preview',kind,id]);
+      const status=globalThis.__fakePreviewStatus[kind]||'eligible';
+      return {kind,id,status,canDraft:status==='eligible',
+      validUntilUtc:'2099-01-01T00:00:00Z',
       storeNumber:kind==='provider'?'1001':null,
       to:kind==='provider'?[]:['customer@example.invalid'],cc:[],
       recipientReviewRequired:kind==='provider'};},
@@ -215,6 +218,25 @@ export async function prepareIntegratedSite({panelElements}) {
     /To needs review/u);
   assert.equal((await enabledPage.evaluate(() => window.__fakeCalls))
     .filter(call => call[0] === 'providerDraft').length, 1);
+  await enabledPage.evaluate(() => {
+    Object.defineProperty(document, 'visibilityState',
+      {configurable: true, value: 'hidden'});
+    document.dispatchEvent(new Event('visibilitychange'));
+    window.dispatchEvent(new Event('focus'));
+  });
+  assert.equal((await enabledPage.evaluate(() => window.__fakeCalls))
+    .filter(call => call[0] === 'checkSent').length, 0);
+  await enabledPage.evaluate(() => {
+    Object.defineProperty(document, 'visibilityState',
+      {configurable: true, value: 'visible'});
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await enabledPage.waitForFunction(() => window.__fakeCalls.some(call =>
+    call[0] === 'checkSent' && call[1] === 'provider'));
+  assert.match(await enabledPage.locator('#actionStatus').textContent(),
+    /Sent Items confirms/u);
+  assert.equal((await enabledPage.evaluate(() => window.__fakeCalls))
+    .filter(call => call[0] === 'providerDraft').length, 1);
   await enabledPage.frameLocator('#chart').locator('#customer').click();
   await enabledPage.waitForFunction(() =>
     window.__fakeCalls.some(call => call[0] === 'preview' &&
@@ -232,7 +254,24 @@ export async function prepareIntegratedSite({panelElements}) {
   assert.match(await enabledPage.locator('#actionStatus').textContent(),
     /Sent Items confirms/u);
   assert.equal((await enabledPage.evaluate(() => window.__fakeCalls))
-    .filter(call => call[0] === 'checkSent').length, 1);
+    .filter(call => call[0] === 'checkSent' && call[1] === 'customer')
+    .length, 1);
+  await enabledPage.evaluate(() => {
+    window.__fakePreviewStatus.provider = 'draft_status_unverified';
+  });
+  await enabledPage.frameLocator('#chart').locator('#provider').click();
+  await enabledPage.waitForFunction(() =>
+    document.getElementById('actionStatus')?.textContent.includes(
+      'Another coordinator owns an unresolved draft'));
+  assert.equal(await enabledPage.locator('#providerDraftAction').isDisabled(),
+    true);
+  await enabledPage.evaluate(() => {
+    document.dispatchEvent(new Event('visibilitychange'));
+    window.dispatchEvent(new Event('focus'));
+  });
+  assert.equal((await enabledPage.evaluate(() => window.__fakeCalls))
+    .filter(call => call[0] === 'checkSent' && call[1] === 'provider')
+    .length, 1);
   await enabledPage.frameLocator('#chart').locator('#invalid').click();
   await enabledPage.waitForFunction(() =>
     document.getElementById('selectedIdentity')?.textContent ===
@@ -243,7 +282,7 @@ export async function prepareIntegratedSite({panelElements}) {
   assert.deepEqual(errors, [], 'Page JavaScript error');
   assert.equal(localPaths.some(path => path.includes('/auth/redirect.html')),
     false, 'Held page unexpectedly started auth');
-  console.log('Isolated Edge smoke passed: built held site plus temporary fake runtime, selection-only iframe, two draft gestures, Check Sent, no external requests.');
+  console.log('Isolated Edge smoke passed: built held site plus temporary fake runtime, selection-only iframe, two draft gestures, return-to-Gantt Sent check, cross-owner hold, no external requests.');
 } finally {
   if (browser) await browser.close();
   if (server) await new Promise(done => server.close(done));

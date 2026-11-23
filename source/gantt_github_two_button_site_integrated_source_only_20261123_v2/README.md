@@ -1,4 +1,4 @@
-# Arby's Gantt two-button integration site — held source-only v1
+# Arby's Gantt two-button integration site — held source-only v2
 
 **Status: source-only, disabled, not published.** This folder packages the
 encrypted Gantt parent shell, an exact selection bridge, a proposed Entra SPA
@@ -18,7 +18,7 @@ are code-level endpoints, not deployment credentials.
 | Sign in | MSAL delegated popup using the dedicated `auth/redirect.html` bridge. | No Graph request occurs during disabled startup. The exact redirect still needs registration and a live canary. |
 | Create or reopen provider parts draft | Snapshot provider V4 Release reader, source resolver, unique Claim/Receipt writer, then Graph `POST /me/messages` for an **unsent** draft. | First draft requires owner-approved fresh Release, one charted native WO, pre-install Installation/Relocation phase, six exact myCoke links, source rereads, and a trusted parent click. An occupied key can only resume its existing draft; it never creates a second draft. |
 | Create or reopen customer tracker draft | Sanitized lean Graph V3 customer Release and the same physical unique Claim/Receipt Lists. | The shared Draft receipt stores only a SHA-256 marker for the private tracker link. The customer capability and Outlook draft link stay out of team-readable rows. |
-| Check Sent Items | Contextual attended provider V4 or customer V3 read of the original mailbox message. | A Sent receipt requires real Sent Items evidence. Missing draft or uncertain status is held. |
+| Check Sent Items | Contextual attended provider V4 or customer V3 read of the original mailbox message. | A Sent receipt requires real Sent Items evidence. Returning to the signed-in Gantt checks an exact selected draft once; opening an owned occupied draft selection also checks once. The manual button remains available. Missing draft or uncertain status is held. |
 
 There is **no Send control**, `Mail.Send` scope, or automatic send route. The
 coordinator reviews the editable Outlook draft's current Thirsty phase, parts
@@ -29,6 +29,18 @@ warning; dated contact suggestions may leave To blank. The panel identifies
 the Gantt snapshot as dated and provides the exact WO Thirsty link. It does
 not claim the chart is current. The single provider draft click is the only
 pre-Outlook write gesture after normal sign-in and automatic preview.
+
+The return check is a **bounded, read-only mailbox reconciliation**. It runs
+only after sign-in for the exact selected draft when the tab returns from
+Outlook, or once when the owner selects an occupied draft after reopening the
+page. A hidden tab waits until visible; a changed selection discards an old
+result. Two focus events do not repeat one return check. If the Gantt is
+closed when Outlook sends, the shared Sent receipt is written when the draft
+owner next opens that selection or uses Check Sent. Another coordinator cannot
+read the owner's mailbox; the unique shared Claim prevents that coordinator
+from making a second first draft while the Sent state is unresolved. A
+closed GitHub page has no background listener and cannot record the send at
+the instant Outlook sends it.
 
 `src/compose_site.mjs` injects **all three** snapshot provider operations
 (`preview`, `draft`, `checkSent`) into the parent adapter. It never combines a
@@ -54,13 +66,14 @@ Claim can occupy the provider key without allowing a second draft.
   redirect bridge at the requested exact SPA URL.
 
 Run `npm test`, `npm run build`, and `npm run smoke` from this folder. The
-current result is **5/5 unit tests, a production Vite build, and an isolated
+current result is **12/12 unit tests, a production Vite build, and an isolated
 Edge smoke pass**. The smoke serves an invented encrypted chart on loopback,
 checks the shipped disabled build, then builds a temporary fake-runtime
-variant to exercise both draft buttons and Check Sent. It verifies selection
-alone makes no draft call, invalid selection and iframe reload clear action
-eligibility, mobile width, and zero external requests. The fake variant is
-removed after the test and is not present in `dist`. Provider V4's separate
+variant to exercise both draft buttons, return-to-Gantt Sent checks, an
+occupied key owned by another coordinator, and manual Check Sent. It verifies
+selection alone makes no draft call, invalid selection and iframe reload
+clear action eligibility, mobile width, and zero external requests. The fake
+variant is removed after the test and is not present in `dist`. Provider V4's separate
 29/29 suite and Edge smoke verify its Release, Claim, six-link draft,
 cross-action privacy, reopening, and Sent behavior using invented data.
 These are local tests, not live tenant or mailbox evidence.
