@@ -129,6 +129,9 @@ class FakeGraph {
     this.receiptPosts = 0;
     this.draftPosts = 0;
     this.messageReads = 0;
+    this.sentScanCalls = [];
+    this.sentScanResult = null;
+    this.sentScanError = null;
     this.requestCalls = [];
     this.failClaimAfterPersist = false;
     this.failDraftAfterPersist = false;
@@ -142,6 +145,11 @@ class FakeGraph {
     const message = this.messages.get(id);
     if (!message) throw new GraphHttpError(404);
     return structuredClone(message);
+  }
+  async findSentByCorrelation(correlationId, claimedAtUtc) {
+    this.sentScanCalls.push({correlationId, claimedAtUtc});
+    if (this.sentScanError) throw this.sentScanError;
+    return this.sentScanResult;
   }
   async createDraft(content, correlationId, beforeFetch) {
     beforeFetch();
@@ -651,6 +659,114 @@ test('missing immutable message is unresolved, never inferred as sent', async ()
   assert.equal(result.status, 'unresolved');
   assert.equal(h.graph.receiptPosts, 1);
   assert.equal(h.graph.rows.get(LISTS.receipts).length, 1);
+});
+
+test('provider Sent copy with a changed ID is owner-verified once and blocks another draft', async () => {
+  const h = harness();
+  const draft = await h.flow.draft(WO);
+  const key = providerDispatchKey(WO);
+  const original = h.graph.messages.get(draft.immutableId);
+  const sentId = 'immutable-invented-provider-sent-copy';
+  h.graph.messages.delete(draft.immutableId);
+  h.graph.messages.set(sentId, {...structuredClone(original), id: sentId,
+    isDraft: false, parentFolderId: 'folder-sentitems',
+    sentDateTime: new Date(NOW).toISOString(),
+    internetMessageId: '<provider-changed-id@example.invalid>'});
+  h.graph.sentScanResult = sentId;
+  const result = await h.flow.checkSent(WO);
+  assert.equal(result.status, 'sent');
+  const stored = h.graph.rows.get(LISTS.receipts)[1].fields;
+  assert.equal(stored.DraftImmutableId, draft.immutableId);
+  assert.equal(stored.SentImmutableId, sentId);
+  const claim = h.graph.rows.get(LISTS.claims)[0].fields;
+  assert.deepEqual(h.graph.sentScanCalls, [{correlationId: claim.CorrelationId,
+    claimedAtUtc: claim.ClaimedAtUtc}]);
+  assert.deepEqual([h.graph.claimPosts, h.graph.draftPosts,
+    h.graph.receiptPosts], [1, 1, 2]);
+  h.graph.sentScanError = new Error('scan should not run again');
+  assert.equal((await h.flow.checkSent(WO)).status, 'sent');
+  assert.equal(h.graph.sentScanCalls.length, 1);
+  assert.equal((await h.flow.draft(WO)).status, 'sent');
+  assert.deepEqual([h.graph.claimPosts, h.graph.draftPosts], [1, 1]);
+  h.f.actor = ACTOR_B;
+  const reads = h.graph.messageReads;
+  assert.equal((await h.flow.checkSent(WO)).status,
+    'sent_recorded_unverified');
+  assert.equal(h.graph.messageReads, reads);
+  assert.equal((await h.flow.draft(WO)).status,
+    'sent_recorded_unverified');
+  assert.deepEqual([h.graph.claimPosts, h.graph.draftPosts], [1, 1]);
+  assert.equal((await new SnapshotClaimReceiptStore({graph: h.graph,
+    config: config(), now: () => h.f.nowMs}).getState(key)).sent
+    .fields.SentImmutableId, sentId);
+});
+
+test('provider missing, ambiguous, or failed Sent scan stays unresolved and occupied', async () => {
+  for (const scan of [null, new Error('ambiguous or incomplete scan')]) {
+    const h = harness();
+    const draft = await h.flow.draft(WO);
+    h.graph.messages.delete(draft.immutableId);
+    if (scan instanceof Error) h.graph.sentScanError = scan;
+    else h.graph.sentScanResult = scan;
+    assert.equal((await h.flow.checkSent(WO)).status, 'unresolved');
+    assert.equal((await h.flow.draft(WO)).status, 'unresolved');
+    assert.deepEqual([h.graph.claimPosts, h.graph.draftPosts,
+      h.graph.receiptPosts], [1, 1, 1]);
+  }
+});
+
+test('provider changed-ID candidate must be the correlated Sent item', async () => {
+  for (const mutate of [
+    message => { message.internetMessageHeaders = []; },
+    message => { message.isDraft = true; message.parentFolderId = 'folder-drafts'; },
+    message => { message.parentFolderId = 'folder-inbox'; },
+  ]) {
+    const h = harness();
+    const draft = await h.flow.draft(WO);
+    const original = h.graph.messages.get(draft.immutableId);
+    const sentId = 'immutable-invented-provider-sent-copy';
+    h.graph.messages.delete(draft.immutableId);
+    const candidate = {...structuredClone(original), id: sentId,
+      isDraft: false, parentFolderId: 'folder-sentitems',
+      sentDateTime: new Date(NOW).toISOString(),
+      internetMessageId: '<provider-changed-id@example.invalid>'};
+    mutate(candidate);
+    h.graph.messages.set(sentId, candidate);
+    h.graph.sentScanResult = sentId;
+    await assert.rejects(() => h.flow.checkSent(WO));
+    assert.deepEqual([h.graph.claimPosts, h.graph.draftPosts,
+      h.graph.receiptPosts], [1, 1, 1]);
+  }
+});
+
+test('a forged alternate Sent ID is only a hint, never mailbox proof', async () => {
+  const h = harness();
+  const draft = await h.flow.draft(WO);
+  const key = providerDispatchKey(WO);
+  const store = new SnapshotClaimReceiptStore({graph: h.graph,
+    config: config(), now: () => h.f.nowMs});
+  const state = await store.getState(key);
+  const original = h.graph.messages.get(draft.immutableId);
+  const hintedId = 'immutable-invented-provider-hint';
+  h.graph.messages.delete(draft.immutableId);
+  h.graph.messages.set(hintedId, {...structuredClone(original), id: hintedId});
+  await store.appendSent(state, ACTOR_A, {id: hintedId,
+    to: ['manager@example.invalid', 'planner@example.invalid'],
+    cc: [], bcc: [], sentAtUtc: new Date(NOW).toISOString(),
+    internetMessageId: '<forged-alt@example.invalid>',
+    subject: original.subject, bodySha256: SHA(original.body.content),
+    linksSha256: SHA(JSON.stringify(PICOS_PARTS.map(part => part.url).sort())),
+    reviewReason: ''});
+  assert.equal((await h.flow.preview(WO)).status,
+    'sent_recorded_unverified');
+  await rejectsCode(() => h.flow.checkSent(WO), 'SENT_SCAN_NOT_SENT');
+  assert.equal(h.graph.sentScanCalls.length, 0);
+  assert.equal(h.graph.draftPosts, 1);
+  h.f.actor = ACTOR_B;
+  const before = h.graph.messageReads;
+  assert.equal((await h.flow.checkSent(WO)).status,
+    'sent_recorded_unverified');
+  assert.equal(h.graph.messageReads, before);
 });
 
 test('a shape-valid forged Sent row never proves a send or permits a second draft', async () => {

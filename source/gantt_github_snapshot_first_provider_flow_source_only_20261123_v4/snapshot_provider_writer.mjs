@@ -359,16 +359,35 @@ export class SnapshotProviderActionWriter {
     const evidence = receiptEvidence(state);
     await this._sameActor(context);
     let message;
+    let recoveredId = null;
     try { message = await context.graph.getMessage(evidence.id); }
     catch (error) {
       if (error instanceof GraphHttpError && error.status === 404) {
-        return {status: 'unresolved', reason: 'IMMUTABLE_ID_NOT_FOUND'};
+        try {
+          // A stored Sent ID is only a hint. The owner's mailbox and exact
+          // correlation checks below still decide whether it was sent.
+          recoveredId = state.sent &&
+            state.sent.fields.SentImmutableId !== evidence.id ?
+            state.sent.fields.SentImmutableId :
+            await context.graph.findSentByCorrelation(
+              state.claim.fields.CorrelationId, state.claim.fields.ClaimedAtUtc);
+          if (!recoveredId) {
+            return {status: 'unresolved', reason: 'SENT_ITEM_NOT_VERIFIED'};
+          }
+          message = await context.graph.getMessage(recoveredId);
+        } catch {
+          return {status: 'unresolved', reason: 'SENT_SCAN_UNVERIFIED'};
+        }
+      } else {
+        fail('MAILBOX_READ_UNCERTAIN');
       }
-      fail('MAILBOX_READ_UNCERTAIN');
     }
-    if (message?.id !== evidence.id ||
+    if (message?.id !== (recoveredId ?? evidence.id) ||
         correlationIdOf(message) !== state.claim.fields.CorrelationId) {
       fail('MAILBOX_CORRELATION_MISMATCH');
+    }
+    if (recoveredId && message.isDraft !== false) {
+      fail('SENT_SCAN_NOT_SENT');
     }
     const key = state.claim.fields.DispatchKey;
     if (message.isDraft === true) {
