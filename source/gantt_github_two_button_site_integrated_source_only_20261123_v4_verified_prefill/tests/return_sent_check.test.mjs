@@ -161,6 +161,8 @@ test('manual-entry provider preview keeps To blank and arms one editable draft',
   const call = h.calls.find(item => item[0] === 'providerDraft');
   assert.equal(call?.[1], WO);
   assert.deepEqual(call?.[2]?.to, []);
+  assert.match(h.controls.actionStatus.textContent,
+    /return to this chart so Sent Items can be verified/u);
   h.ui.dispose();
 });
 
@@ -389,6 +391,8 @@ test('eligible customer click carries the exact displayed Release binding', asyn
     ['customerDraft', FORM, binding]);
   assert.match(h.controls.actionStatus.textContent,
     /Verify the customer in Outlook before Send/u);
+  assert.match(h.controls.actionStatus.textContent,
+    /return to this chart so Sent Items can be verified/u);
   h.ui.dispose();
 });
 

@@ -1,5 +1,6 @@
 const HELD_COPY = 'Draft actions are currently held while coordinator setup is verified.';
 const CUSTOMER_RECIPIENT_REVIEW = 'FORM Primary Contact is a suggested recipient, not proof of who clicked Submit. Verify the customer in Outlook before Send.';
+const SENT_RECEIPT_REMINDER = 'After sending in Outlook, return to this chart so Sent Items can be verified and the shared receipt recorded.';
 const DRAFT_LINK_HOSTS = new Set(['outlook.office.com', 'outlook.office365.com']);
 const HELD_MESSAGES = Object.freeze({
   NOT_STARTED: 'No tracked draft or Sent receipt exists yet.',
@@ -309,7 +310,8 @@ export function createCoordinatorActionUi({runtime, elements, getBridge,
       }
       const message = draftMessage(result);
       setStatus(selected?.kind === 'customer'
-        ? `${message} ${CUSTOMER_RECIPIENT_REVIEW}` : message);
+        ? `${message} ${CUSTOMER_RECIPIENT_REVIEW} ${SENT_RECEIPT_REMINDER}`
+        : `${message} ${SENT_RECEIPT_REMINDER}`);
     } else if (result?.state === 'sent' ||
         result?.state === 'sent_with_changes') {
       popup?.close();
