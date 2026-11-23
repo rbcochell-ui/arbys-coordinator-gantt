@@ -7,25 +7,9 @@
   <meta name="robots" content="noindex,nofollow,noarchive">
   <meta name="referrer" content="no-referrer">
   <title>Arby’s coordinator timeline</title>
-  <style>
-    html,body{height:100%;margin:0;background:#f4f7fa;color:#17324a;font:16px/1.5 system-ui,sans-serif}
-    #status{max-width:36rem;margin:12vh auto;padding:1.5rem 2rem;border:1px solid #d7e1e9;border-radius:12px;background:#fff}
-    #status h1{font-size:1.4rem;line-height:1.25;margin:0 0 .5rem}
-    #status p{margin:.5rem 0 0}
-    #workspace{height:100%;display:flex;flex-direction:column}
-    #workspace[hidden],#chart[hidden]{display:none}
-    #actionBar{display:flex;align-items:center;gap:.9rem;flex-wrap:wrap;padding:.55rem 1rem;border-bottom:1px solid #cddbe4;background:#fff}
-    #actionBar strong{font-size:1rem}
-    #selection{margin:0;flex:1;min-width:14rem}
-    #selectionContext{display:flex;gap:.4rem 1rem;flex-wrap:wrap;width:100%;font-size:.88rem;color:#405c6b}
-    #selectionContext span{display:inline-block}
-    #draftAction{padding:.45rem .8rem;border:1px solid #b5c5cb;border-radius:.4rem;background:#edf2f3;color:#5f7580;font:inherit;cursor:not-allowed}
-    #heldReason{width:100%;margin:0;color:#536a78;font-size:.85rem}
-    #openExternal{color:#18536a;font-weight:650;white-space:nowrap}
-    #chart{display:block;flex:1;min-height:0;width:100%;border:0}
-    @media(max-width:40rem){#status{margin:2rem 1rem}#actionBar{gap:.35rem}#selection{min-width:100%}}
-  </style>
-  <script type="module" src="./view.mjs"></script>
+  <style>html,body{color:#17324a;background:#f4f7fa;height:100%;margin:0;font:16px/1.5 system-ui,sans-serif}button,input{font:inherit}#status{background:#fff;border:1px solid #d7e1e9;border-radius:12px;max-width:36rem;margin:12vh auto;padding:1.5rem 2rem}#status h1{margin:0 0 .5rem;font-size:1.4rem;line-height:1.25}#status p{margin:.5rem 0 0}#workspace{flex-direction:column;height:100%;display:flex}#workspace[hidden],#chart[hidden],#openDraftLink[hidden],#providerSourcePanel[hidden]{display:none}#actionBar{background:#fff;border-bottom:1px solid #cddbe4;gap:.55rem;padding:.75rem 1rem;display:grid}#actionHeading{flex-wrap:wrap;align-items:center;gap:1rem;display:flex}#actionHeading strong{font-size:1rem}#openExternal{color:#18536a;font-weight:650}#selection,#selectionContext,#heldReason,#actionStatus{margin:0}#selectionContext{color:#405c6b;flex-wrap:wrap;gap:.4rem 1rem;font-size:.88rem;display:flex}#reviewPanel{grid-template-columns:minmax(4rem,auto) minmax(12rem,1fr);align-items:center;gap:.35rem .6rem;max-width:56rem;display:grid}#reviewPanel label{font-size:.88rem;font-weight:650}#reviewPanel input{border:1px solid #9ab4c3;border-radius:.35rem;min-width:0;padding:.4rem .55rem}#reviewPanel input:disabled{color:#657b87;background:#f0f3f5}#recipientHelp{color:#526b79;grid-column:1/-1;margin:0;font-size:.8rem}#providerSourcePanel{background:#f8fbfc;border:1px solid #cddbe4;border-radius:.5rem;max-width:56rem;padding:.65rem .8rem}#providerSourcePanel p{margin:.2rem 0;font-size:.85rem}#providerSourcePanel a{color:#18536a;font-weight:650}#actionButtons{flex-wrap:wrap;gap:.45rem;display:flex}.actionButton{color:#fff;cursor:pointer;background:#145a6f;border:1px solid #145a6f;border-radius:.4rem;padding:.45rem .8rem}.actionButton:disabled{color:#5f7580;cursor:not-allowed;background:#edf2f3;border-color:#b5c5cb}#openDraftLink{color:#18536a;font-weight:650}#heldReason,#actionStatus{color:#405c6b;font-size:.88rem}#chart{border:0;flex:1;width:100%;min-height:0;display:block}@media (width<=40rem){#status{margin:2rem 1rem}#reviewPanel{grid-template-columns:1fr}#recipientHelp{grid-column:1}}</style>
+  <script type="module" crossorigin src="/arbys-coordinator-gantt/assets/app-Bt4l-vuj.js"></script>
+  <link rel="modulepreload" crossorigin href="/arbys-coordinator-gantt/assets/Configuration-B1Fwyfg7.js">
 </head>
 <body>
   <main id="status" role="status" aria-live="polite">
@@ -34,16 +18,39 @@
   </main>
   <div id="workspace" hidden>
     <header id="actionBar">
-      <strong>Coordinator actions</strong>
-      <a id="openExternal" href="#" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">Open in browser ↗</a>
-      <p id="selection" aria-live="polite">Select a project or work order draft button in the chart.</p>
-      <button id="draftAction" type="button" disabled>Create or open Outlook draft</button>
+      <div id="actionHeading">
+        <strong>Coordinator actions</strong>
+        <a id="openExternal" href="#" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">Open in browser ↗</a>
+      </div>
+      <p id="selection" aria-live="polite">Select an exact work order or FORM project in the chart.</p>
       <div id="selectionContext" aria-live="polite">
         <span id="selectedIdentity">Exact source ID: none selected</span>
         <span id="selectedStore">Store: unverified</span>
-        <span id="selectedRecipients">Intended recipients: unverified</span>
       </div>
-      <p id="heldReason">Draft actions are held until company sign-in, shared claims and receipts, coordinator access, and fresh source checks are ready.</p>
+      <section id="providerSourcePanel" aria-label="Dated provider source" hidden>
+        <p id="sourceAsOf"></p><p id="chartDate"></p><p id="datedPhase"></p>
+        <p id="agentCode"></p><p id="storeNumber"></p>
+        <a id="thirstyLink" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" hidden>Open exact Thirsty work order ↗</a>
+        <p id="recipientWarning"></p><p id="reviewWarning"></p>
+        <p id="providerSourceStatus" role="status" aria-live="polite"></p>
+      </section>
+      <div id="reviewPanel">
+        <label for="toReview">Suggested To</label>
+        <input id="toReview" type="text" autocomplete="off" spellcheck="false" readonly disabled aria-describedby="recipientHelp">
+        <label for="ccReview">Cc</label>
+        <input id="ccReview" type="text" autocomplete="off" spellcheck="false" readonly disabled aria-describedby="recipientHelp">
+        <p id="recipientHelp">These are suggested preview values. For customer drafts, FORM Primary Contact does not prove who clicked Submit. Verify recipients in Outlook before Send; To may be blank for a canary draft.</p>
+      </div>
+      <div id="actionButtons">
+        <button id="signInAction" class="actionButton" type="button" disabled>Sign in</button>
+        <button id="verifyAction" class="actionButton" type="button" disabled>Refresh source preview</button>
+        <button id="providerDraftAction" class="actionButton" type="button" disabled>Create or reopen provider parts draft</button>
+        <button id="customerDraftAction" class="actionButton" type="button" disabled>Create or reopen customer milestone draft</button>
+        <button id="checkSentAction" class="actionButton" type="button" disabled>Check Sent Items</button>
+      </div>
+      <a id="openDraftLink" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" hidden>Open Outlook draft ↗</a>
+      <p id="heldReason">Draft actions are currently held while coordinator setup is verified.</p>
+      <p id="actionStatus" role="status" aria-live="polite"></p>
     </header>
     <iframe id="chart" title="Coordinator timeline" hidden
       sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox allow-downloads allow-modals"

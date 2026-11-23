@@ -1,0 +1,70 @@
+name: Held Arby's Gantt checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: held-gantt-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  held-candidate:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - name: Check out reviewed source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Use the reviewed Node version
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24.19.0'
+          package-manager-cache: false
+
+      - name: Verify checked-in held artifact
+        run: node scripts/verify-held-candidate.mjs
+
+      - name: Scan all public repository files
+        run: node scripts/verify-public-tree.mjs
+
+      - name: Test shared claim and receipt logic
+        working-directory: source/github_gantt_graph_actions_lean_source_only_20261122_v3
+        run: npm test
+
+      - name: Install current site dependencies
+        working-directory: source/gantt_github_two_button_site_integrated_source_only_20261123_v4_verified_prefill
+        run: npm ci --no-audit --no-fund
+
+      - name: Install current provider test dependencies
+        working-directory: source/gantt_github_snapshot_first_provider_flow_source_only_20261123_v7_verified_prefill
+        run: npm ci --no-audit --no-fund
+
+      - name: Test current provider flow
+        working-directory: source/gantt_github_snapshot_first_provider_flow_source_only_20261123_v7_verified_prefill
+        run: npm test
+
+      - name: Test current two-button site
+        working-directory: source/gantt_github_two_button_site_integrated_source_only_20261123_v4_verified_prefill
+        run: npm test
+
+      - name: Rebuild current held site
+        working-directory: source/gantt_github_two_button_site_integrated_source_only_20261123_v4_verified_prefill
+        run: npm run build
+
+      - name: Compare build with pinned public artifact
+        run: node scripts/verify-held-candidate.mjs --require-dist
+
+      - name: Smoke provider review panel in isolated Edge
+        working-directory: source/gantt_github_snapshot_first_provider_flow_source_only_20261123_v7_verified_prefill
+        run: npm run smoke
+
+      - name: Smoke two-button site in isolated Edge
+        working-directory: source/gantt_github_two_button_site_integrated_source_only_20261123_v4_verified_prefill
+        run: npm run smoke
