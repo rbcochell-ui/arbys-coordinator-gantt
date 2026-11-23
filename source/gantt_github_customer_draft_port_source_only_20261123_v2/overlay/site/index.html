@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'sha256-RWHiDSdg+FkDsV4JflcMJ23lSH2VuwgyN+eN120e1nk=' 'sha256-oAkeyXTAi0IkjQbHZbwU0wm+CFy+Lsh4bn5QJMY+G/4=' 'sha256-2/N7PIvLLZSp67qtSmbd9eI1kCEo+QX1rdbSnTVENJw='; style-src 'unsafe-inline'; connect-src 'self' https://login.microsoftonline.com https://graph.microsoft.com; frame-src 'self' about: https://login.microsoftonline.com; img-src 'none'; font-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; worker-src 'none'">
+  <meta name="robots" content="noindex,nofollow,noarchive">
+  <meta name="referrer" content="no-referrer">
+  <title>Arby’s coordinator timeline</title>
+  <style>
+    html,body{height:100%;margin:0;background:#f4f7fa;color:#17324a;font:16px/1.5 system-ui,sans-serif}
+    button,input{font:inherit}
+    #status{max-width:36rem;margin:12vh auto;padding:1.5rem 2rem;border:1px solid #d7e1e9;border-radius:12px;background:#fff}
+    #status h1{font-size:1.4rem;line-height:1.25;margin:0 0 .5rem}
+    #status p{margin:.5rem 0 0}
+    #workspace{height:100%;display:flex;flex-direction:column}
+    #workspace[hidden],#chart[hidden],#openDraftLink[hidden]{display:none}
+    #actionBar{display:grid;gap:.55rem;padding:.75rem 1rem;border-bottom:1px solid #cddbe4;background:#fff}
+    #actionHeading{display:flex;align-items:center;gap:1rem;flex-wrap:wrap}
+    #actionHeading strong{font-size:1rem}
+    #openExternal{color:#18536a;font-weight:650}
+    #selection,#selectionContext,#heldReason,#actionStatus{margin:0}
+    #selectionContext{display:flex;gap:.4rem .6rem;flex-wrap:wrap;font-size:.9rem;color:#29475a}
+    #selectionContext span{padding:.12rem .45rem;border:1px solid #d5e1e7;border-radius:.35rem;background:#f6f9fa}
+    #reviewPanel{display:grid;grid-template-columns:minmax(4rem,auto) minmax(12rem,1fr);align-items:center;gap:.35rem .6rem;max-width:56rem}
+    #reviewPanel label{font-size:.88rem;font-weight:650}
+    #reviewPanel input{min-width:0;padding:.4rem .55rem;border:1px solid #9ab4c3;border-radius:.35rem}
+    #reviewPanel input:disabled{background:#f0f3f5;color:#657b87}
+    #recipientHelp{grid-column:1/-1;margin:0;font-size:.8rem;color:#526b79}
+    #actionButtons{display:flex;gap:.45rem;flex-wrap:wrap}
+    .actionButton{padding:.45rem .8rem;border:1px solid #145a6f;border-radius:.4rem;background:#145a6f;color:#fff;cursor:pointer}
+    .actionButton:disabled{border-color:#b5c5cb;background:#edf2f3;color:#5f7580;cursor:not-allowed}
+    #openDraftLink{color:#18536a;font-weight:650}
+    #heldReason,#actionStatus{font-size:.88rem;color:#405c6b}
+    #chart{display:block;flex:1;min-height:0;width:100%;border:0}
+    @media(max-width:40rem){#status{margin:2rem 1rem}#reviewPanel{grid-template-columns:1fr}#recipientHelp{grid-column:1}}
+  </style>
+  <script type="module" src="./view.mjs"></script>
+</head>
+<body>
+  <main id="status" role="status" aria-live="polite">
+    <h1>Opening coordinator timeline</h1>
+    <p>This link needs its complete private address.</p>
+  </main>
+  <div id="workspace" hidden>
+    <header id="actionBar">
+      <div id="actionHeading">
+        <strong>Coordinator actions</strong>
+        <a id="openExternal" href="#" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">Open in browser ↗</a>
+      </div>
+      <p id="selection" aria-live="polite">Select an exact work order or FORM project in the chart.</p>
+      <div id="selectionContext" aria-live="polite">
+        <span id="selectedIdentity">Exact source ID: none selected</span>
+        <span id="selectedStore">Store: unverified</span>
+        <span id="selectedWorkOrder">WO number: unverified</span>
+        <span id="selectedAgent">Assigned SP: unverified</span>
+        <span id="selectedStatus">Saved WO status: unverified</span>
+        <span id="selectedSourceTime">Source observed: unverified</span>
+      </div>
+      <div id="reviewPanel">
+        <label for="toReview">To</label>
+        <input id="toReview" type="text" autocomplete="off" spellcheck="false" readonly disabled aria-describedby="recipientHelp">
+        <label for="ccReview">Cc</label>
+        <input id="ccReview" type="text" autocomplete="off" spellcheck="false" readonly disabled aria-describedby="recipientHelp">
+        <p id="recipientHelp">Review the suggested recipient in Outlook before Send.</p>
+      </div>
+      <div id="actionButtons">
+        <button id="signInAction" class="actionButton" type="button" disabled>Sign in</button>
+        <button id="verifyAction" class="actionButton" type="button" disabled>Refresh source preview</button>
+        <button id="providerDraftAction" class="actionButton" type="button" disabled>Create or reopen provider parts draft</button>
+        <button id="customerDraftAction" class="actionButton" type="button" disabled>Create or reopen customer milestone draft</button>
+        <button id="checkSentAction" class="actionButton" type="button" disabled>Check Sent Items</button>
+      </div>
+      <a id="openDraftLink" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" hidden>Open Outlook draft ↗</a>
+      <p id="heldReason">Draft actions are currently held while coordinator setup is verified.</p>
+      <p id="actionStatus" role="status" aria-live="polite"></p>
+    </header>
+    <iframe id="chart" title="Coordinator timeline" hidden
+      sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox allow-downloads allow-modals"
+      referrerpolicy="no-referrer"></iframe>
+  </div>
+  <noscript>This page needs JavaScript to open the private timeline.</noscript>
+</body>
+</html>

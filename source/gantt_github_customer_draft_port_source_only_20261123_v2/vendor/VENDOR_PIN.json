@@ -1,0 +1,26 @@
+{
+  "origin": "14 unchanged files byte-match Draft PR #2 at d8b92efb7a9a211614574e948003fcaecd2f263c; actions.mjs and snapshot_parent_adapter.mjs are local v2 customer preview-binding patches pending independent review",
+  "algorithm": "sha256",
+  "patchedBaseHashes": {
+    "lean_v3/actions.mjs": "3d04b3d34cedf9572568f0832118e3f67668b22a63d18ca9d959ad4b69d0dc26",
+    "snapshot_parent_adapter.mjs": "c09925963b123d70330833114f7049ec53e0404275f88f76a838160421fee4c5"
+  },
+  "files": {
+    "lean_v3/actions.mjs": "55992c82841b41b34aad6e1a80e62bfeaac451a38905c4cc81cdafc7ffc9dca3",
+    "lean_v3/claim_receipt_store.mjs": "849e12b67a0a0ae71c84a1a8f3d85d73928ae35914fb8696a95254bca823f174",
+    "lean_v3/config.mjs": "d40dc5bb2deeb9ba31d019e5eb36b202c740ce0f6349b7dfe1b9b3d632781ec2",
+    "lean_v3/contract.mjs": "b7ce3ce128fc5d06fe2c3670823f8ac86760f07a2f77d4be2020448a333af17d",
+    "lean_v3/customer_source.mjs": "4fe34ea1cdd2fe3231aab45b529a6fd88bce6574b016e2702ac676464cc097b8",
+    "lean_v3/graph.mjs": "afea0001355080b695b714b999e8269079a7016c086f52fef8f48647bdd7a85b",
+    "lean_v3/legacy_migration_proof.mjs": "a837cfba2fcbed79a5ee20a24e3b97b54e50d81aa70c169ad12529127c850345",
+    "lean_v3/legacy_owner_recovery.mjs": "6d1b344a20561fd971f92b4a9e6fec5e48139f07a78e07dda88accd367ea9248",
+    "lean_v3/legacy_reopen.mjs": "8acec6e0e3f706d2e71b6e226ee44f03261f476cee71239c89a9faf963b2b98e",
+    "lean_v3/legacy_sent_attempt_contract.mjs": "f6fe33fa2c4d016891d94cca3ca2b24d04ab90674472c70ff465b7eb5b8d87ba",
+    "lean_v3/legacy_sent_graph_port.mjs": "600cfa15ff7a9479f735bc9b7b0ac80c8e75fee48abaa5fe2f1cc483fa788cf4",
+    "lean_v3/legacy_sent_receipt.mjs": "cafc1ac86526dda0b0c02b1f51ab962ef13badd788dbfb6930ec2d01758b63e3",
+    "lean_v3/legacy_team_inventory_fence.mjs": "c8f924efe479980b3ecf991f2b1e0a41edc569bab1bd0b62b512d11149329a77",
+    "lean_v3/provider_source.mjs": "db2190f0dbc8a5a2e3d9964affe561a78b06949e21bb117190c72cd58e73e58d",
+    "lean_v3/signed_owner_route.mjs": "2aec5fb99cf326379f30ae96609cff5dbb2b8f1c96949418f4306c5bd410fa1d",
+    "snapshot_parent_adapter.mjs": "42ba00eb476fa4050c692ce75b563428e8d67ce5acfbc726bced4a3b0d32eb94"
+  }
+}
