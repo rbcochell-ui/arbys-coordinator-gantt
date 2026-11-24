@@ -4,6 +4,7 @@
 // The user must copy the exact body first, then open Outlook and paste it.
 // This module cannot send email or check Sent.
 import {decryptGantt} from './crypto.mjs';
+import {renderReviewedChartFooter} from './actions/chart_footer.mjs';
 import {parseSelectionConfig} from './selection_config.mjs';
 import {createFrameSelectionBridge} from './actions/frame_bridge.mjs';
 import {parseComposeSources} from './actions/selection_source.mjs';
@@ -171,6 +172,7 @@ function providerState(selected) {
 
 function explanation(code) {
   switch (code) {
+    case 'ready': return 'Template ready. Copy the full message, then open Outlook and paste it.';
     case 'not_selected': return 'Select a project or work order in the chart.';
     case 'checking_selection': return 'Checking the exact chart selection.';
     case 'preparing': return 'Preparing the exact reviewed email message.';
@@ -515,6 +517,7 @@ async function open() {
     const body = await response.text();
     if (body.length > 1_700_000) throw new Error('Encrypted chart too large');
     const html = await decryptGantt(JSON.parse(body), handoff.key);
+    const displayedHtml = await renderReviewedChartFooter(html);
     if (generation !== openGeneration) return;
     chartKey = handoff.key;
     chartHtml = html;
@@ -538,7 +541,7 @@ async function open() {
     };
     frameLoadHandler = armBridge;
     frame.addEventListener('load', frameLoadHandler);
-    frame.srcdoc = html;
+    frame.srcdoc = displayedHtml;
     armBridge();
     frame.hidden = false;
     workspace.hidden = false;
