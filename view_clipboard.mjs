@@ -1,5 +1,5 @@
-// HELD deploy candidate based on public Gantt commit ea4860cf. It renders the
-// same chart, but its two draft actions use only pinned editable templates.
+// The customer action uses its reviewed binding. The provider parts panel is
+// an on-demand, dated, human-reviewed email template for Installation WOs.
 // This tenant's Outlook web route preserves To and subject but ignores body.
 // The user must copy the exact body first, then open Outlook and paste it.
 // This module cannot send email or check Sent.
@@ -11,12 +11,8 @@ import {parseComposeSources} from './actions/selection_source.mjs';
 import {buildExternalBrowserHref, parseExternalBrowserHref,
   restoreAllowlistedSelection} from './actions/external_browser_handoff.mjs';
 import {digestSelection} from './actions/action_release.mjs';
-import {prepareOneClickCustomerTemplate, prepareOneClickProviderTemplate,
-  selectedChartStore} from
+import {prepareOneClickCustomerTemplate, selectedChartStore} from
   './actions/one_click_client.mjs';
-import {PROVIDER_COMMITMENTS} from './actions/provider_pins.mjs';
-import {F32_PROVIDER_SOURCE_RELEASE} from
-  './actions/provider_source_release.mjs';
 import {PINNED_FORM_ONLY_COMMITMENTS} from
   './actions/release_commitments.mjs';
 import {OUTER_RELEASE} from './actions/outer_release.mjs';
@@ -24,10 +20,13 @@ import {canonicalOutlookHeader} from
   './actions/canonical_outlook_header.mjs';
 import {clipboardPayload} from './actions/clipboard_payload.mjs';
 import {writeClipboardPayload} from './actions/clipboard_writer.mjs';
+import {createProviderTemplatePage} from
+  './actions/provider_template_page.mjs';
 
 const $ = id => document.getElementById(id);
 const status = $('status');
 const workspace = $('workspace');
+const actionBar = $('actionBar');
 const frame = $('chart');
 const selectionText = $('selection');
 const openExternal = $('openExternal');
@@ -50,8 +49,6 @@ const sentReason = $('sentReason');
 const embedded = window.top !== window.self;
 const PILOT_CUSTOMER_DIGEST =
   '16998cb9608e15cfcd7ee63cd73184719cc3838806d28f914adff7de799b858d';
-const PILOT_PROVIDER_DIGEST =
-  '3b2fd28277a82e83372fcede80b61b7b2f8882acff652b54b03a10a95b8c6d5b';
 // Teams Website-tab pop-up behavior needs an attended host readback. The
 // browser handoff remains visible and preserves the exact chart selection.
 const EMBEDDED_COMPOSE_ALLOWED = false;
@@ -60,6 +57,7 @@ let bridge;
 let sources;
 let allowed;
 let chartHtml;
+let chartDisplayHtml;
 let chartKey;
 let handoffBaseHref;
 let rejectedExternalSelection = false;
@@ -75,6 +73,20 @@ let failedKey = null;
 let copied = null;
 let copying = false;
 const COPY_WINDOW_MS = 5 * 60 * 1000;
+
+function returnToChart(home) {
+  actionBar.hidden = false;
+  frame.hidden = false;
+  if (home) {
+    window.scrollTo({top: 0, left: 0});
+    // The chart has an opaque sandboxed origin. Reopening its reviewed srcdoc
+    // resets its own scroll position; scrolling the parent window cannot.
+    if (chartDisplayHtml) frame.srcdoc = chartDisplayHtml;
+  }
+  providerCompose.focus();
+}
+const providerPage = createProviderTemplatePage({document, navigator,
+  onReturn: returnToChart});
 
 function selectionKey(selected) {
   return selected?.kind === 'customer' || selected?.kind === 'provider'
@@ -117,28 +129,6 @@ function customerGateState(selected) {
   return 'ready';
 }
 
-function providerGateState(selected) {
-  if (selected?.kind !== 'provider') return 'not_selected';
-  const digest = hasDigest(selected);
-  if (!digest) return 'checking_selection';
-  if (digest === PILOT_PROVIDER_DIGEST) return 'existing_pilot_draft';
-  if (PROVIDER_COMMITMENTS[digest] !==
-      F32_PROVIDER_SOURCE_RELEASE.providerCommitmentSha256 ||
-      digest !== F32_PROVIDER_SOURCE_RELEASE.selectionDigestSha256) {
-    return 'provider_source_held';
-  }
-  if (F32_PROVIDER_SOURCE_RELEASE.state !== 'RELEASED' ||
-      F32_PROVIDER_SOURCE_RELEASE.sourceOwnerReviewed !== true) {
-    return 'release_held';
-  }
-  if (Date.now() >= Date.parse(F32_PROVIDER_SOURCE_RELEASE.sourceValidUntilUtc)) {
-    return 'source_expired';
-  }
-  if (embedded && !EMBEDDED_COMPOSE_ALLOWED) return 'open_in_browser';
-  if (attempted.has(selectionKey(selected))) return 'already_attempted';
-  return 'ready';
-}
-
 function preparedFor(selected, digest) {
   return prepared?.kind === selected?.kind &&
     prepared?.id === selected?.id &&
@@ -161,15 +151,6 @@ function customerState(selected) {
   return preparingKey === key ? 'preparing' : 'checking_selection';
 }
 
-function providerState(selected) {
-  const gate = providerGateState(selected);
-  if (gate !== 'ready') return gate;
-  const key = selectionKey(selected);
-  if (preparedFor(selected, hasDigest(selected))) return 'ready';
-  if (failedKey === key) return 'prepare_failed';
-  return preparingKey === key ? 'preparing' : 'checking_selection';
-}
-
 function explanation(code) {
   switch (code) {
     case 'ready': return 'Template ready. Copy the full message, then open Outlook and paste it.';
@@ -183,24 +164,22 @@ function explanation(code) {
     case 'source_expired': return 'The dated contact/link source expired. Refresh its reviewed binding before opening a template.';
     case 'open_in_browser': return 'Open the complete Gantt link in a browser to draft from this Teams selection.';
     case 'already_attempted': return 'Outlook navigation was already attempted for this selection on this page. Check Outlook Drafts before trying again.';
-    case 'provider_source_held': return 'A reviewed current WO/contact source is not released for this selection.';
     default: return 'Template unavailable.';
   }
 }
 
 function updateButtons(selected) {
   const customer = customerState(selected);
-  const provider = providerState(selected);
   customerCompose.disabled = copying || customer !== 'ready';
-  providerCompose.disabled = copying || provider !== 'ready';
+  providerCompose.disabled = copying || !providerPage.isReady();
   sentCheck.disabled = true;
   customerCompose.textContent = customer === 'ready'
     ? 'Customer milestone draft — copy full message'
     : 'Customer milestone draft — held';
-  providerCompose.textContent = provider === 'ready'
-    ? 'Provider parts draft — copy full message'
-    : 'Provider parts draft — held';
-  const canOpen = (customer === 'ready' || provider === 'ready') &&
+  providerCompose.textContent = providerPage.isReady()
+    ? 'Provider parts email template — open'
+    : 'Provider parts email template — unavailable';
+  const canOpen = customer === 'ready' &&
     copiedFor(selected, hasDigest(selected));
   if (canOpen) {
     openOutlook.setAttribute('href', prepared.url);
@@ -213,7 +192,7 @@ function updateButtons(selected) {
   }
   sentCheck.textContent = 'Check Sent — unavailable';
   heldReason.textContent = handoffMessage ??
-    `Customer: ${explanation(customer)} Provider: ${explanation(provider)}`;
+    `Customer: ${explanation(customer)} Provider parts: open the template above for any charted Installation WO or manual entry; verify current Thirsty details before Send.`;
   sentReason.textContent =
     'Check Sent is unavailable. This page cannot confirm delivery, a shared Claim, or a milestone completion.';
 }
@@ -288,7 +267,7 @@ function showSelection(selected) {
       'Install manager and planner are suggestions; verify both before Send.';
     sourceStamp.textContent = source
       ? `Thirsty overlay observed ${source.sourceObservedAtUtc}; status ${source.status}; SP date is not a confirmed install date.`
-      : `Verified source candidate observed ${F32_PROVIDER_SOURCE_RELEASE.sourceObservedAtUtc}; recheck current Thirsty status and date before Send.`;
+      : `Chart snapshot ${sources?.snapshotAsOfDate ?? 'unverified'}; recheck current Thirsty status and date before Send.`;
   }
   updateButtons(selected);
   void digestSelection(selected, chartKey).then(digest => {
@@ -296,32 +275,30 @@ function showSelection(selected) {
     selectedDigest = digest;
     digestedSelection = {kind: selected.kind, id: selected.id};
     updateButtons(selected);
-    void prepareSelectedMessage(selected, generation, digest);
-  }).catch(() => { /* Keep both templates held. */ });
+    if (selected.kind === 'customer') {
+      void prepareSelectedMessage(selected, generation, digest);
+    }
+  }).catch(() => { /* Keep the customer template held. */ });
 }
 
 async function prepareSelectedMessage(selected, generation, digest) {
-  const gate = selected.kind === 'customer'
-    ? customerGateState(selected) : providerGateState(selected);
+  if (selected.kind !== 'customer') return;
+  const gate = customerGateState(selected);
   if (gate !== 'ready') return;
   const key = selectionKey(selected);
   preparingKey = key;
   updateButtons(selected);
   try {
-    const template = selected.kind === 'customer'
-      ? await prepareOneClickCustomerTemplate(selected.id, chartHtml, chartKey)
-      : await prepareOneClickProviderTemplate(selected.id, chartHtml, chartKey);
+    const template = await prepareOneClickCustomerTemplate(selected.id,
+      chartHtml, chartKey);
     if (generation !== selectionGeneration ||
         !sameSelection(selected, bridge?.getSelection()) ||
         hasDigest(selected) !== digest) return;
-    const stillReady = selected.kind === 'customer'
-      ? customerGateState(selected) : providerGateState(selected);
+    const stillReady = customerGateState(selected);
     if (stillReady !== 'ready') return;
     const header = canonicalOutlookHeader(template);
     const payload = clipboardPayload(template);
-    const expiry = selected.kind === 'customer'
-      ? OUTER_RELEASE.validUntilUtc
-      : F32_PROVIDER_SOURCE_RELEASE.sourceValidUntilUtc;
+    const expiry = OUTER_RELEASE.validUntilUtc;
     const expiresAtMs = Date.parse(expiry);
     if (!Number.isFinite(expiresAtMs) || Date.now() >= expiresAtMs) return;
     prepared = Object.freeze({kind: selected.kind, id: selected.id, digest,
@@ -349,14 +326,13 @@ function showManualCopy(body) {
   updateButtons(bridge?.getSelection());
 }
 
-async function onCopyClick(event, kind) {
+async function onCopyClick(event) {
   const selected = bridge?.getSelection();
-  const state = kind === 'customer'
-    ? customerState(selected) : providerState(selected);
+  const state = customerState(selected);
   const digest = hasDigest(selected);
   if (!event.isTrusted || event.button !== 0 || copying ||
       state !== 'ready' ||
-      !preparedFor(selected, digest) || prepared.kind !== kind) return;
+      !preparedFor(selected, digest) || prepared.kind !== 'customer') return;
   const generation = selectionGeneration;
   const body = prepared.body;
   copying = true;
@@ -389,8 +365,7 @@ async function onCopyClick(event, kind) {
     if (generation === selectionGeneration &&
         sameSelection(selected, bridge?.getSelection()) &&
         preparedFor(selected, digest) &&
-        (kind === 'customer' ? customerGateState(selected)
-          : providerGateState(selected)) === 'ready') showManualCopy(body);
+        customerGateState(selected) === 'ready') showManualCopy(body);
   } finally {
     if (generation === selectionGeneration) {
       copying = false;
@@ -401,8 +376,7 @@ async function onCopyClick(event, kind) {
 
 function onOutlookClick(event) {
   const selected = bridge?.getSelection();
-  const state = selected?.kind === 'customer'
-    ? customerState(selected) : providerState(selected);
+  const state = customerState(selected);
   const current = preparedFor(selected, hasDigest(selected)) &&
     copiedFor(selected, hasDigest(selected)) &&
     openOutlook.getAttribute('href') === prepared.url;
@@ -449,7 +423,7 @@ function onManualConfirmation(event) {
     COPY_WINDOW_MS);
 }
 
-function unavailable() {
+function unavailable(missingKey = false) {
   if (frameLoadHandler) frame.removeEventListener('load', frameLoadHandler);
   frameLoadHandler = undefined;
   bridge?.dispose();
@@ -469,20 +443,28 @@ function unavailable() {
   sources = null;
   allowed = null;
   chartHtml = null;
+  chartDisplayHtml = null;
   chartKey = null;
   handoffBaseHref = null;
   rejectedExternalSelection = false;
+  providerPage.reset();
+  actionBar.hidden = false;
   frame.hidden = true;
   frame.removeAttribute('srcdoc');
   workspace.hidden = true;
   status.hidden = false;
-  status.querySelector('h1').textContent = 'Timeline unavailable';
-  status.querySelector('p').textContent =
-    'Check the complete private Gantt link or ask the coordinator for a new one.';
+  status.querySelector('h1').textContent = missingKey
+    ? 'Open the coordinator Gantt' : 'Timeline unavailable';
+  status.querySelector('p').textContent = missingKey
+    ? 'Open the “Coordinator Gantt (public)” Teams tab or use the complete private Gantt link. This base address alone does not open the chart.'
+    : 'Check the complete private Gantt link or ask the coordinator for a new one.';
 }
 
 async function open() {
   const generation = ++openGeneration;
+  providerPage.reset();
+  chartDisplayHtml = null;
+  actionBar.hidden = false;
   if (frameLoadHandler) frame.removeEventListener('load', frameLoadHandler);
   frameLoadHandler = undefined;
   bridge?.dispose();
@@ -521,9 +503,12 @@ async function open() {
     if (generation !== openGeneration) return;
     chartKey = handoff.key;
     chartHtml = html;
+    chartDisplayHtml = displayedHtml;
     allowed = parseSelectionConfig(html);
     try { sources = parseComposeSources(html, allowed); }
     catch { sources = null; }
+    try { providerPage.configure(html); }
+    catch { providerPage.reset(); }
     handoffBaseHref = handoff.capabilityHref;
     const restored = restoreAllowlistedSelection(handoff.selection, allowed);
     rejectedExternalSelection = handoff.selection !== null && restored === null;
@@ -547,15 +532,19 @@ async function open() {
     workspace.hidden = false;
     status.hidden = true;
   } catch {
-    if (generation === openGeneration) unavailable();
+    if (generation === openGeneration) unavailable(!window.location.hash);
   }
 }
 
 customerCompose.addEventListener('click', event => {
-  void onCopyClick(event, 'customer');
+  void onCopyClick(event);
 });
 providerCompose.addEventListener('click', event => {
-  void onCopyClick(event, 'provider');
+  if (!event.isTrusted || event.button !== 0 ||
+      !providerPage.isReady()) return;
+  actionBar.hidden = true;
+  frame.hidden = true;
+  providerPage.open(bridge?.getSelection());
 });
 openOutlook.addEventListener('click', onOutlookClick);
 openOutlook.addEventListener('auxclick', event => event.preventDefault());

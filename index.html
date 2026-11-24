@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'sha256-3XslmDyW1hzYrl+IMRrtGot/GL5tq8BrIFrrlmZkUL8=' 'sha256-oAkeyXTAi0IkjQbHZbwU0wm+CFy+Lsh4bn5QJMY+G/4=' 'sha256-PpyZqB4NkhR4J4OSMBdoPsFrHZ97DiFv5EogJD4HHIM='; style-src 'unsafe-inline'; connect-src 'self'; frame-src 'self' about:; img-src 'none'; font-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; worker-src 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'sha256-3XslmDyW1hzYrl+IMRrtGot/GL5tq8BrIFrrlmZkUL8=' 'sha256-l8ovGqiondMEExIbos76CTyrXUOggkDE2TPbqjMaG08=' 'sha256-hTyJ6e0nJco4YQgkUxdA1qQAC9fj59H/EC1vGCGU8uk='; style-src 'unsafe-inline'; connect-src 'self'; frame-src 'self' about:; img-src 'none'; font-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; worker-src 'none'">
   <meta name="robots" content="noindex,nofollow,noarchive">
   <meta name="referrer" content="no-referrer">
   <title>Arby’s coordinator timeline</title>
@@ -13,7 +13,7 @@
     #status h1{font-size:1.4rem;line-height:1.25;margin:0 0 .5rem}
     #status p{margin:.5rem 0 0}
     #workspace{height:100%;display:flex;flex-direction:column}
-    #workspace[hidden],#chart[hidden]{display:none}
+    #workspace[hidden],#chart[hidden],#actionBar[hidden],#providerTemplatePage[hidden]{display:none}
     #actionBar{display:flex;align-items:center;gap:.9rem;flex-wrap:wrap;padding:.55rem 1rem;border-bottom:1px solid #cddbe4;background:#fff}
     #actionBar strong{font-size:1rem}
     #selection{margin:0;flex:1;min-width:14rem}
@@ -38,7 +38,33 @@
     #openExternal{color:#18536a;font-weight:650;white-space:nowrap}
     #openExternal.prominent{display:inline-block;padding:.48rem .8rem;border:2px solid #185b73;border-radius:.4rem;background:#e7f4f8;text-decoration:underline;text-underline-offset:.16em}
     #chart{display:block;flex:1;min-height:0;width:100%;border:0}
-    @media(max-width:40rem){#status{margin:2rem 1rem}#actionBar{gap:.35rem}#selection{min-width:100%}}
+    #providerTemplatePage{flex:1;overflow:auto;padding:1.25rem;background:#f4f7fa;box-sizing:border-box}
+    .provider-panel{max-width:68rem;margin:0 auto;padding:1.3rem 1.5rem 2rem;border:1px solid #d7e1e9;border-radius:12px;background:#fff;box-shadow:0 8px 24px rgba(23,50,74,.06)}
+    .provider-nav{display:flex;gap:.6rem;flex-wrap:wrap;margin-bottom:1rem}
+    .provider-nav button,#providerTemplateCopy,#providerSelectBody,#providerTemplateOutlook{display:inline-block;padding:.5rem .8rem;border:1px solid #226075;border-radius:.4rem;background:#185b73;color:#fff;font:inherit;font-weight:650;text-decoration:none;cursor:pointer}
+    .provider-nav button{background:#fff;color:#185b73}
+    .provider-nav button:focus-visible,#providerTemplateCopy:focus-visible,#providerSelectBody:focus-visible,#providerTemplateOutlook:focus-visible,#providerWoSelect:focus-visible,#providerManualFields input:focus-visible,#providerTemplatePage input:focus-visible{outline:3px solid #a35a00;outline-offset:2px}
+    #providerTemplateCopy:disabled,#providerTemplateOutlook[aria-disabled="true"]{border-color:#b5c5cb;background:#edf2f3;color:#5f7580;cursor:not-allowed}
+    .provider-panel h1{margin:0 0 .35rem;font-size:1.5rem;line-height:1.25}
+    .provider-panel h2{margin:1.3rem 0 .45rem;font-size:1.1rem}
+    .provider-panel p{margin:.45rem 0}
+    .provider-note{padding:.6rem .75rem;border-left:4px solid #c48734;background:#fff8e9;color:#5a4328}
+    .provider-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.75rem;margin:1rem 0}
+    .provider-fields label{display:block;font-weight:650}
+    .provider-fields input,.provider-fields select{display:block;width:100%;box-sizing:border-box;margin-top:.25rem;padding:.52rem .6rem;border:1px solid #aebfc8;border-radius:.35rem;background:#fff;color:#17324a;font:inherit}
+    #providerWoSelect{width:100%;box-sizing:border-box;margin:.25rem 0 .7rem;padding:.52rem .6rem;border:1px solid #aebfc8;border-radius:.35rem;background:#fff;color:#17324a;font:inherit}
+    #providerManualFields[hidden],#providerCopyFallback[hidden]{display:none}
+    #providerBodyPreview{padding:1rem;border:1px solid #d7e1e9;border-radius:.45rem;background:#fcfefe;overflow-wrap:anywhere}
+    #providerBodyPreview p{margin:0 0 .8rem}
+    #providerBodyPreview ul{margin:.2rem 0 1rem;padding-left:1.5rem}
+    #providerBodyPreview li{margin:.4rem 0}
+    #providerBodyPreview a{color:#075a83;text-decoration:underline;text-underline-offset:.15em;font-weight:650}
+    #providerPlainBody{display:block;width:100%;min-height:14rem;box-sizing:border-box;margin:.5rem 0;padding:.7rem;border:1px solid #b9cbd1;border-radius:.4rem;background:#f7fafb;color:#17324a;font:14px/1.45 ui-monospace,monospace}
+    .provider-handoff{display:flex;align-items:center;gap:.65rem;flex-wrap:wrap;margin:1rem 0}
+    #providerTemplateCopyStatus{width:100%;font-weight:650}
+    #providerCopyFallback{padding:.7rem .8rem;border:1px solid #d6a245;border-radius:.4rem;background:#fffaf0}
+    #providerCopyFallback label{display:block;margin:.6rem 0 0}
+    @media(max-width:40rem){#status{margin:2rem 1rem}#actionBar{gap:.35rem}#selection{min-width:100%}#providerTemplatePage{padding:.5rem}.provider-panel{padding:1rem}.provider-fields{grid-template-columns:1fr}}
   </style>
   <script type="module" src="./view_clipboard.mjs"></script>
 </head>
@@ -53,7 +79,7 @@
       <a id="openExternal" href="#" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">Open in browser ↗</a>
       <p id="selection" aria-live="polite">Select a project or work order in the chart.</p>
       <div id="composeButtons">
-        <button id="providerCompose" type="button" aria-describedby="duplicateWarning heldReason" disabled>Provider parts draft — held</button>
+        <button id="providerCompose" type="button" aria-describedby="duplicateWarning heldReason" disabled>Provider parts email template</button>
         <button id="customerCompose" type="button" aria-describedby="duplicateWarning heldReason" disabled>Customer milestone draft — held</button>
         <button id="sentCheck" type="button" aria-describedby="sentReason" disabled>Check Sent — unavailable</button>
       </div>
@@ -61,7 +87,7 @@
         <strong>Outlook handoff: copy, open, then paste</strong>
         <p id="copyStatus" role="status" aria-live="polite">The message has not been copied.</p>
         <a id="openOutlook" aria-disabled="true" tabindex="-1" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">Open Outlook with recipients and subject ↗</a>
-        <p>Outlook will open with To and subject only. Paste the complete message into its body, then verify every recipient, private customer link or six parts links, and current Thirsty details before Send. Copying does not put the body into Outlook.</p>
+        <p>Outlook will open with To and subject only. Paste the complete customer message into its body, then verify the recipient, private project link and current status before Send. Copying does not put the body into Outlook.</p>
         <div id="manualCopy" hidden>
           <p>Clipboard access was unavailable. Select and copy the full message below, then confirm you copied it before opening Outlook.</p>
           <textarea id="manualBody" readonly aria-label="Complete message to copy"></textarea>
@@ -77,14 +103,62 @@
       </div>
       <p id="reviewGuidance">Before sending in Outlook, verify the suggested recipients, current Thirsty date and status, customer identity, and every link.</p>
       <p id="duplicateWarning">Opening Outlook again may create another unsent draft. Check Outlook Drafts before retrying. These buttons never send email.</p>
-      <p id="heldReason" role="status" aria-live="polite">Draft: Select a project or work order in the chart.</p>
+      <p id="heldReason" role="status" aria-live="polite">Customer draft: select a project. The provider parts template is available above whenever you need it.</p>
       <details id="actionLimit"><summary>How the templates work</summary>
-        <p id="actionAccess">Anyone with the complete private Gantt link can view this chart. A released action copies the reviewed message first, then lets you open Outlook with recipients and subject. You must paste the body yourself.</p>
+        <p id="actionAccess">Anyone with the complete private Gantt link can view this chart. The provider parts template can use any charted Installation work order or a manually entered one. The customer action uses its separate reviewed binding. Copy the message, then open Outlook. You must paste the body yourself.</p>
         <p id="actorStatus">This page does not verify your Outlook account. Check the signed-in account and recipients in Outlook before Send.</p>
         <p id="sentReason" role="status" aria-live="polite">Check Sent is unavailable. This page cannot confirm delivery or mark a milestone complete.</p>
-        <p>A released action prepares a message from a pinned project or work-order binding. It cannot paste into Outlook, create a shared Claim, check Sent Items, prove delivery, order parts, or complete a milestone. Existing pilot drafts stay held to avoid duplicates.</p>
+        <p>The on-demand provider template is a dated suggestion, including any contact addresses. It cannot paste into Outlook, create a shared Claim, check Sent Items, prove delivery, order parts, or complete a milestone. Check Outlook Drafts before making a duplicate.</p>
       </details>
     </header>
+    <section id="providerTemplatePage" aria-labelledby="providerTemplateHeading" hidden>
+      <div class="provider-panel">
+        <nav class="provider-nav" aria-label="Return to coordinator Gantt">
+          <button id="providerBack" type="button">← Back to Gantt</button>
+          <button id="providerHome" type="button">⌂ Gantt Home</button>
+        </nav>
+        <h1 id="providerTemplateHeading" tabindex="-1">Provider parts email template</h1>
+        <p>Choose an Installation work order, copy the complete message, then open an editable Outlook compose window and paste it. This page never sends email or orders parts.</p>
+        <p id="providerTemplateSource" class="provider-note">Source: unverified.</p>
+        <label for="providerWoSelect"><strong>Installation work order</strong></label>
+        <select id="providerWoSelect" aria-describedby="providerWoContext"></select>
+        <div id="providerManualFields" class="provider-fields" hidden>
+          <label for="providerManualWo">Work order number
+            <input id="providerManualWo" type="text" inputmode="numeric" autocomplete="off" placeholder="5–12 digits">
+          </label>
+          <label for="providerManualAgent">SP agent code
+            <input id="providerManualAgent" type="text" autocomplete="off" placeholder="For example F32">
+          </label>
+        </div>
+        <p id="providerWoContext" class="provider-note" aria-live="polite">Choose a work order.</p>
+        <p id="providerRecipientNote" aria-live="polite">Recipient suggestions are unverified.</p>
+        <div class="provider-fields">
+          <label for="providerTo">To (editable suggestion; may be blank)
+            <input id="providerTo" type="text" autocomplete="off" aria-describedby="providerRecipientNote" placeholder="Enter current provider contacts in Outlook if blank">
+          </label>
+          <label for="providerSubject">Subject
+            <input id="providerSubject" type="text" autocomplete="off">
+          </label>
+        </div>
+        <h2>Email body preview</h2>
+        <p>Each part name below opens its exact myCoke product page. Rich copy keeps those names clickable in Outlook; plain-text copy keeps all six full URLs.</p>
+        <div id="providerBodyPreview" aria-label="Provider parts email body preview"></div>
+        <details id="providerPlainDetails"><summary>Full plain-text message and URLs</summary>
+          <textarea id="providerPlainBody" readonly aria-label="Full provider message with six myCoke URLs"></textarea>
+        </details>
+        <div class="provider-handoff">
+          <button id="providerTemplateCopy" type="button" disabled>Copy full message with clickable part names</button>
+          <a id="providerTemplateOutlook" aria-disabled="true" tabindex="-1" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">Open editable Outlook draft ↗</a>
+          <p id="providerTemplateCopyStatus" role="status" aria-live="polite">The message has not been copied.</p>
+        </div>
+        <div id="providerCopyFallback" hidden>
+          <p>Select and copy the full message above. Plain text keeps the URLs, but you must make each part name clickable in Outlook before Send.</p>
+          <button id="providerSelectBody" type="button">Select full message for Ctrl+C</button>
+          <label><input id="providerManualCopied" type="checkbox"> I copied the full message</label>
+        </div>
+        <p class="provider-note">Before Send in Outlook, verify the current Installation status, service date, SP assignment, recipient roles, quantities, item fit and six clickable links. A closed or cancelled work order needs review before any order.</p>
+      </div>
+    </section>
     <iframe id="chart" title="Coordinator timeline" hidden
       sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox allow-downloads allow-modals"
       referrerpolicy="no-referrer"></iframe>
