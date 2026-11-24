@@ -1,0 +1,12 @@
+{
+  "name": "arbys-gantt-snapshot-first-provider-flow-held-v7-verified-prefill",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "smoke": "node tests/rendered_panel_smoke.mjs"
+  },
+  "devDependencies": {
+    "playwright-core": "1.56.1"
+  }
+}
