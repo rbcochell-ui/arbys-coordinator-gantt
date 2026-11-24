@@ -20,9 +20,15 @@
     #selectionContext{display:flex;gap:.4rem 1rem;flex-wrap:wrap;width:100%;font-size:.88rem;color:#405c6b}
     #selectionContext span{display:inline-block}
     #composeButtons{display:flex;gap:.5rem;flex-wrap:wrap;width:100%}
-    #composeButtons button{padding:.45rem .8rem;border:1px solid #226075;border-radius:.4rem;background:#185b73;color:#fff;font:inherit;font-weight:650;cursor:pointer}
-    #composeButtons button:disabled{border-color:#b5c5cb;background:#edf2f3;color:#5f7580;cursor:not-allowed}
+    #composeButtons button,#copyPanel button,#openOutlook{display:inline-block;padding:.45rem .8rem;border:1px solid #226075;border-radius:.4rem;background:#185b73;color:#fff;font:inherit;font-weight:650;text-decoration:none;cursor:pointer}
+    #composeButtons button:disabled,#copyPanel button:disabled,#openOutlook[aria-disabled="true"]{border-color:#b5c5cb;background:#edf2f3;color:#5f7580;cursor:not-allowed}
+    #copyPanel{width:100%;padding:.7rem .8rem;border:2px solid #d6a245;border-radius:.4rem;background:#fffaf0;box-sizing:border-box}
+    #copyPanel[hidden],#manualCopy[hidden]{display:none}
+    #copyPanel p{margin:.15rem 0 .55rem}
+    #manualCopy textarea{display:block;width:100%;min-height:7rem;box-sizing:border-box;margin:.45rem 0;font:14px/1.4 ui-monospace,monospace}
+    #manualCopy label{display:block;margin:.55rem 0}
     #reviewGuidance{width:100%;margin:0;font-size:.9rem;font-weight:600}
+    #duplicateWarning{width:100%;margin:0;padding:.45rem .6rem;border-left:4px solid #aa6500;background:#fff5e5;color:#653a00;font-size:.9rem;font-weight:650}
     #actionAccess{width:100%;margin:0;font-size:.88rem;color:#405c6b}
     #actorStatus{width:100%;margin:0;font-size:.88rem;color:#405c6b}
     #heldReason,#sentReason{width:100%;margin:0;color:#536a78;font-size:.85rem}
@@ -34,7 +40,7 @@
     #chart{display:block;flex:1;min-height:0;width:100%;border:0}
     @media(max-width:40rem){#status{margin:2rem 1rem}#actionBar{gap:.35rem}#selection{min-width:100%}}
   </style>
-  <script type="module" src="./view.mjs"></script>
+  <script type="module" src="./view_clipboard.mjs"></script>
 </head>
 <body>
   <main id="status" role="status" aria-live="polite">
@@ -47,22 +53,37 @@
       <a id="openExternal" href="#" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">Open in browser ↗</a>
       <p id="selection" aria-live="polite">Select a project or work order in the chart.</p>
       <div id="composeButtons">
-        <button id="providerCompose" type="button" aria-describedby="actorStatus heldReason" disabled>Provider parts draft — held</button>
-        <button id="customerCompose" type="button" aria-describedby="actorStatus heldReason" disabled>Customer milestone draft — held</button>
-        <button id="sentCheck" type="button" aria-describedby="actorStatus sentReason" disabled>Check Sent — held</button>
+        <button id="providerCompose" type="button" aria-describedby="duplicateWarning heldReason" disabled>Provider parts draft — held</button>
+        <button id="customerCompose" type="button" aria-describedby="duplicateWarning heldReason" disabled>Customer milestone draft — held</button>
+        <button id="sentCheck" type="button" aria-describedby="sentReason" disabled>Check Sent — unavailable</button>
       </div>
+      <section id="copyPanel" aria-label="Copy and open Outlook" hidden>
+        <strong>Outlook handoff: copy, open, then paste</strong>
+        <p id="copyStatus" role="status" aria-live="polite">The message has not been copied.</p>
+        <a id="openOutlook" aria-disabled="true" tabindex="-1" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">Open Outlook with recipients and subject ↗</a>
+        <p>Outlook will open with To and subject only. Paste the complete message into its body, then verify every recipient, private customer link or six parts links, and current Thirsty details before Send. Copying does not put the body into Outlook.</p>
+        <div id="manualCopy" hidden>
+          <p>Clipboard access was unavailable. Select and copy the full message below, then confirm you copied it before opening Outlook.</p>
+          <textarea id="manualBody" readonly aria-label="Complete message to copy"></textarea>
+          <button id="selectMessage" type="button">Select full message for Ctrl+C</button>
+          <label><input id="manualCopied" type="checkbox"> I copied the complete message</label>
+        </div>
+      </section>
       <div id="selectionContext" aria-live="polite">
         <span id="selectedIdentity">Exact source ID: none selected</span>
         <span id="selectedStore">Store: unverified</span>
         <span id="selectedRecipients">Intended recipients: unverified</span>
         <span id="sourceStamp">Source: unverified</span>
       </div>
-      <p id="reviewGuidance">Before sending in Outlook, verify the recipient, current Thirsty or FORM date and scope, and every link.</p>
-      <p id="actionAccess">The complete private link, including its fragment key, opens this chart without GitHub sign-in. The chart and helper never send email.</p>
-      <p id="actorStatus">Acting coordinator: not verified on this page. The helper checks your signed-in Coca-Cola Outlook identity.</p>
+      <p id="reviewGuidance">Before sending in Outlook, verify the suggested recipients, current Thirsty date and status, customer identity, and every link.</p>
+      <p id="duplicateWarning">Opening Outlook again may create another unsent draft. Check Outlook Drafts before retrying. These buttons never send email.</p>
       <p id="heldReason" role="status" aria-live="polite">Draft: Select a project or work order in the chart.</p>
-      <p id="sentReason" role="status" aria-live="polite">Check Sent: Select a project or work order in the chart.</p>
-      <details id="actionLimit"><summary>What these buttons can do</summary><p>Only an exact source ID released for this chart can ask the installed helper to open an unsent draft. Existing pilot drafts need verified adoption. The helper checks its signed admission, shared Claim, current source, contact, and private tracker. Check Sent can identify a candidate in this version; it does not mark a milestone complete.</p></details>
+      <details id="actionLimit"><summary>How the templates work</summary>
+        <p id="actionAccess">Anyone with the complete private Gantt link can view this chart. A released action copies the reviewed message first, then lets you open Outlook with recipients and subject. You must paste the body yourself.</p>
+        <p id="actorStatus">This page does not verify your Outlook account. Check the signed-in account and recipients in Outlook before Send.</p>
+        <p id="sentReason" role="status" aria-live="polite">Check Sent is unavailable. This page cannot confirm delivery or mark a milestone complete.</p>
+        <p>A released action prepares a message from a pinned project or work-order binding. It cannot paste into Outlook, create a shared Claim, check Sent Items, prove delivery, order parts, or complete a milestone. Existing pilot drafts stay held to avoid duplicates.</p>
+      </details>
     </header>
     <iframe id="chart" title="Coordinator timeline" hidden
       sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox allow-downloads allow-modals"

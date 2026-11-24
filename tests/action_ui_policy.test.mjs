@@ -136,19 +136,19 @@ test('new customer action needs exact digest, browser context and first-attempt 
   assert.throws(() => state(newCustomer, 'send'), /Invalid action/);
 });
 
-test('browser labels actor as unverified and Sent as candidate, never completion', () => {
+test('active viewer labels Outlook identity unverified and Sent unavailable', () => {
   const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
-  const view = readFileSync(new URL('../view.mjs', import.meta.url), 'utf8');
+  const view = readFileSync(new URL('../view_clipboard.mjs', import.meta.url), 'utf8');
   const release = readFileSync(new URL('../actions/action_release.mjs',
     import.meta.url), 'utf8');
   const local = readFileSync(new URL('../actions/local_helper_uri.mjs',
     import.meta.url), 'utf8');
-  assert.match(html, /Acting coordinator: not verified on this page/);
-  assert.match(html, /complete private link, including its fragment key/);
-  assert.match(html, /Check Sent can identify a candidate/);
-  assert.match(view, /Inspect Sent candidate/);
-  assert.match(view, /Chart details are missing/);
-  assert.match(view, /disabled: button.disabled \|\| !state.enabled/);
+  assert.match(html, /This page does not verify your Outlook account/);
+  assert.match(html, /complete private Gantt link/);
+  assert.match(html, /Check Sent is unavailable/);
+  assert.match(view, /sentCheck\.disabled = true/);
+  assert.match(view, /Outlook opening requested with To and subject only/);
+  assert.match(view, /writeClipboardPayload/);
   assert.doesNotMatch(view, /(?:sendMail|markComplete)\s*\(/i);
   assert.doesNotMatch(release + local, /F:[0-9]+:[0-9]+|0WO[A-Za-z0-9]{15}/);
   assert.equal(COMPOSE_RELEASE.providerDraftDigests.length, 0);

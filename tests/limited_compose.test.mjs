@@ -454,10 +454,20 @@ test('pilot binding requires the tracker’s verified source time, not a read cl
     /Invalid pilot binding/);
 });
 
-test('pilot bindings are held outside the public repository', () => {
+test('public data directory contains only reviewed encrypted carriers', () => {
   assert.equal(existsSync(new URL('../data/customer-pilot.enc.json', import.meta.url)), false);
   assert.equal(existsSync(new URL('../data/provider-pilot.enc.json', import.meta.url)), false);
-  assert.deepEqual(readdirSync(new URL('../data/', import.meta.url)), ['gantt.enc.json']);
+  assert.deepEqual(readdirSync(new URL('../data/', import.meta.url)).sort(),
+    ['customer-bindings.outer.json', 'gantt.enc.json',
+      'provider-f32.enc.json']);
+  for (const name of ['customer-bindings.outer.json',
+    'provider-f32.enc.json']) {
+    const raw = readFileSync(new URL(`../data/${name}`, import.meta.url),
+      'utf8');
+    assert.match(raw, /"ciphertext"/);
+    assert.doesNotMatch(raw,
+      /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|#k=[A-Za-z0-9_-]{16,}/i);
+  }
 });
 
 test('known existing drafts hold both pilot compose buttons', () => {
@@ -572,16 +582,20 @@ test('local binding builders refuse public-repository output paths', () => {
   }
 });
 
-test('viewer holds buttons and leaves recipient and link verification for Outlook', () => {
+test('viewer requires copy, Outlook open, and manual paste before Send', () => {
   assert.equal(existsSync(new URL('../actions/local_compose.mjs', import.meta.url)), false);
   const page = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
-  assert.match(page, /Before sending in Outlook, verify the recipient, current Thirsty or FORM date and scope, and every link/);
-  assert.match(page, /Acting coordinator: not verified on this page/);
-  assert.match(page, /Check Sent can identify a candidate/);
+  assert.match(page, /Outlook handoff: copy, open, then paste/);
+  assert.match(page, /This page does not verify your Outlook account/);
+  assert.match(page, /Check Sent is unavailable/);
+  assert.match(page, /You must paste the body yourself/);
   assert.doesNotMatch(page, /id="bindingBundle"|id="reviewGate"/);
-  const runtime = readFileSync(new URL('../view.mjs', import.meta.url), 'utf8');
-  assert.doesNotMatch(runtime, /window\.open\(compose\.url|buildOutlookComposeUrl/);
-  assert.doesNotMatch(runtime, /bindingBundle|parseBindingBundle|decryptSelectedBinding/);
-  assert.match(runtime, /requestLocalHandoff\(/);
-  assert.match(runtime, /window\.location\.assign\(uri\)/);
+  const runtime = readFileSync(new URL('../view_clipboard.mjs',
+    import.meta.url), 'utf8');
+  assert.match(runtime, /writeClipboardPayload/);
+  assert.match(runtime, /copiedFor\(selected, hasDigest\(selected\)\)/);
+  assert.match(runtime, /onOutlookClick/);
+  assert.match(runtime, /sentCheck\.disabled = true/);
+  assert.doesNotMatch(runtime,
+    /window\.open\(compose\.url|buildOutlookComposeUrl|sendMail\s*\(/);
 });
