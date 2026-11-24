@@ -90,6 +90,11 @@ try {
   assert.match(withKey, /Acting coordinator: not verified on this page/);
   assert.match(withKey, /Drafting is held in this release/);
   assert.match(withKey, /Check Sent can identify a candidate/);
+  const providerFragment = new URLSearchParams([['k', key.toString('base64url')],
+    ['kind', 'provider'], ['id', provider]]).toString();
+  const providerView = await dump(`${base}#${providerFragment}`);
+  assert.match(providerView, /Provider parts draft — held/);
+  assert.match(providerView, /Provider Check Sent is held for this work order until its exact receipt route is released/);
   if (process.env.ARBYS_RENDER_SCREENSHOT) {
     const screenshot = resolve(process.env.ARBYS_RENDER_SCREENSHOT);
     assert.ok(screenshot.startsWith(resolvedTemp + sep));

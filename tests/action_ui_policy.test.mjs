@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import {actionUiState} from '../actions/action_ui_policy.mjs';
 import {COMPOSE_RELEASE, digestSelection, releaseForSelection} from
   '../actions/action_release.mjs';
-import {localHandoffEnabled, requestLocalHandoff,
+import {buildLocalSentUri, localHandoffEnabled, requestLocalHandoff,
   ADOPTION_REQUIRED_CUSTOMER_DIGEST} from
   '../actions/local_helper_uri.mjs';
 
@@ -39,7 +39,8 @@ test('selection digests are chart-keyed, stable, and distinct', async () => {
 test('provider stays held while its digest is absent from public release', () => {
   for (const action of ['draft', 'sent']) {
     assert.deepEqual(state(provider, action),
-      {enabled: false, code: 'provider_first_draft_held'});
+      {enabled: false, code: action === 'draft'
+        ? 'provider_first_draft_held' : 'provider_sent_held'});
     assert.equal(localHandoffEnabled('provider', provider, allowed,
       'enabled', action, providerDigest), false);
     let launches = 0;
@@ -49,6 +50,31 @@ test('provider stays held while its digest is absent from public release', () =>
       topLevel: true, navigate: () => { launches++; }}), 'ignored');
     assert.equal(launches, 0);
   }
+});
+
+test('an occupied provider draft can get a receipt-only route', () => {
+  const receiptOnly = {...COMPOSE_RELEASE, sent: 'enabled',
+    providerSentDigests: [providerDigest], providerDraftDigests: []};
+  assert.equal(releaseForSelection('draft', provider, providerDigest,
+    receiptOnly), 'held');
+  assert.equal(releaseForSelection('sent', provider, providerDigest,
+    receiptOnly), 'enabled');
+  assert.deepEqual(state(provider, 'draft', {releaseConfig: receiptOnly}),
+    {enabled: false, code: 'provider_first_draft_held'});
+  assert.deepEqual(state(provider, 'sent', {releaseConfig: receiptOnly}),
+    {enabled: true, code: 'sent_candidate_only'});
+  const launches = [];
+  assert.equal(requestLocalHandoff({event: {type: 'click', isTrusted: true},
+    action: 'draft', kind: 'provider', release: 'enabled', disabled: false,
+    selection: provider, selectionDigest: providerDigest,
+    releaseConfig: receiptOnly, allowed, topLevel: true,
+    navigate: uri => launches.push(uri)}), 'ignored');
+  assert.equal(requestLocalHandoff({event: {type: 'click', isTrusted: true},
+    action: 'sent', kind: 'provider', release: 'enabled', disabled: false,
+    selection: provider, selectionDigest: providerDigest,
+    releaseConfig: receiptOnly, allowed, topLevel: true,
+    navigate: uri => launches.push(uri)}), 'requested');
+  assert.deepEqual(launches, [buildLocalSentUri(provider)]);
 });
 
 test('a release flag alone enables no key; one exact digest can be staged', () => {

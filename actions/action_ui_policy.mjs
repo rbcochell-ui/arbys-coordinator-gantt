@@ -9,7 +9,8 @@ export function actionUiState({action, selection, allowed, release,
     throw new TypeError('Invalid action');
   }
   if (!selection) return Object.freeze({enabled: false, code: 'no_selection'});
-  const hold = selectedHandoffHold(selection, selectionDigest, releaseConfig);
+  const hold = selectedHandoffHold(selection, selectionDigest, releaseConfig,
+    action);
   if (hold !== null) return Object.freeze({enabled: false, code: hold});
   if (!localHandoffEnabled(selection.kind, selection, allowed,
       'enabled', action, selectionDigest, releaseConfig))

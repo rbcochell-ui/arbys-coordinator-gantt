@@ -18,11 +18,16 @@ export const UNCERTAIN_CUSTOMER_DIGEST =
 const DIGEST_RE = /^[0-9a-f]{64}$/u;
 
 export function selectedHandoffHold(selection, digest,
-    releaseConfig = COMPOSE_RELEASE) {
+    releaseConfig = COMPOSE_RELEASE, action = 'draft') {
+  if (action !== 'draft' && action !== 'sent') return 'invalid_action';
   if (!DIGEST_RE.test(digest)) return 'identity_unverified';
-  if (selection?.kind === 'provider' &&
-      !releaseConfig?.providerDraftDigests?.includes(digest))
-    return 'provider_first_draft_held';
+  if (selection?.kind === 'provider') {
+    const digests = action === 'sent'
+      ? releaseConfig?.providerSentDigests
+      : releaseConfig?.providerDraftDigests;
+    if (!Array.isArray(digests) || !digests.includes(digest))
+      return action === 'sent' ? 'provider_sent_held' : 'provider_first_draft_held';
+  }
   if (selection?.kind === 'customer' &&
       (digest === ADOPTION_REQUIRED_CUSTOMER_DIGEST ||
        digest === UNCERTAIN_CUSTOMER_DIGEST)) return 'adoption_required';
@@ -70,7 +75,8 @@ export function localHandoffEnabled(kind, selection, allowed, release,
     action = 'draft', selectionDigest = null,
     releaseConfig = COMPOSE_RELEASE) {
   if (release !== 'enabled' || selection?.kind !== kind ||
-      selectedHandoffHold(selection, selectionDigest, releaseConfig) !== null) return false;
+      selectedHandoffHold(selection, selectionDigest, releaseConfig,
+        action) !== null) return false;
   try { buildAllowlistedHandoffUri(selection, allowed, action); return true; }
   catch { return false; }
 }
@@ -82,7 +88,8 @@ export function requestLocalHandoff({event, kind, action = 'draft', release,
   if (release !== 'enabled' || event?.type !== 'click' ||
       event.isTrusted !== true || disabled === true ||
       selection?.kind !== kind ||
-      selectedHandoffHold(selection, selectionDigest, releaseConfig) !== null)
+      selectedHandoffHold(selection, selectionDigest, releaseConfig,
+        action) !== null)
     return 'ignored';
   if (topLevel !== true) return 'framed';
   if (typeof navigate !== 'function') throw new TypeError('Navigation is required');

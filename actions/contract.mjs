@@ -81,7 +81,7 @@ function verifySourceWindow(source, nowMs) {
 
 export function buildProviderIntent(source, nowMs = Date.now()) {
   const receiptSha256 = verifySourceWindow(source, nowMs);
-  if (source?.kind !== 'Installation' || source?.readyForPartsDraft !== true || source?.hold === true) {
+  if (source?.kind !== 'Installation' || source?.readyForPartsDraft !== true || source?.hold !== false) {
     throw new HeldActionError('WO_NOT_READY', 'Current work-order source has not cleared this draft');
   }
   const nativeWoId = requiredText(source.nativeWoId, 'native_wo_id', /^[A-Za-z0-9]{15,18}$/);

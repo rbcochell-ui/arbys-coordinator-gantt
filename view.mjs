@@ -97,9 +97,8 @@ function actionExplanation(state, action, source) {
   switch (state.code) {
     case 'no_selection': return 'Select a project or work order in the chart.';
     case 'identity_unverified': return 'Checking this exact chart selection. Outlook actions stay held until that check completes.';
-    case 'provider_first_draft_held': return action === 'sent'
-      ? 'Provider Check Sent is held for this work order until its exact source ID is released.'
-      : 'Provider drafting is held for this work order until its exact source ID is released.';
+    case 'provider_first_draft_held': return 'Provider drafting is held for this work order until its exact source ID is released.';
+    case 'provider_sent_held': return 'Provider Check Sent is held for this work order until its exact receipt route is released.';
     case 'adoption_required': return action === 'sent'
       ? 'Held: the existing pilot draft needs verified adoption before a Sent check.'
       : 'Held: this pilot has an unsent draft. Verified adoption is required before reopening; an existing Claim alone does not clear the hold.';
