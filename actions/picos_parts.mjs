@@ -1,6 +1,6 @@
 // Ryan's six reviewed Arby's PICOS parts and current myCoke destinations.
-// A compose URL carries the full URLs as plain text; Outlook must be checked
-// for clickable links before a coordinator sends the message.
+// The installed helper resolves the current work order and creates an unsent
+// draft. The coordinator verifies every link before sending in Outlook.
 export const PICOS_PARTS = Object.freeze([
   Object.freeze({code: '125124', name: 'Bundled Tubing', material: '3517264', url: 'https://www.mycoke.com/product/tubing-fs-16ln-14-38-2-12-re-bndl/01tPY000009IyzqYAC'}),
   Object.freeze({code: '29915', name: 'Stainless Chase (two if needed)', material: '3510205', url: 'https://www.mycoke.com/product/chase-4in-x-4in-x-48in-assy-ss/01tPY000009IqcYYAS'}),

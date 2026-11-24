@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {decodeBase64Url} from '../crypto.mjs';
-import {freshComposeSource, MAX_COMPOSE_SOURCE_AGE_MS} from '../actions/local_compose.mjs';
 import {verifiedTrackerLastVerifiedAtUtc} from '../scripts/verified_tracker_source.mjs';
 
 const TRACKER = `https://rbcochell-ui.github.io/arbys-customer-status-preview/?p=p_${'a'.repeat(32)}#k=${'A'.repeat(43)}`;
@@ -63,10 +62,10 @@ test('customer source time comes from pinned Thirsty Last Verified, not a fresh 
   const artifacts = inventedGeneration();
   const lastVerified = verifiedTrackerLastVerifiedAtUtc(artifacts, TRACKER);
   assert.equal(lastVerified, SOURCE_AT);
-  const now = Date.parse(SOURCE_AT) + MAX_COMPOSE_SOURCE_AGE_MS + 60_000;
-  const releaseListReadAt = new Date(now - 60_000).toISOString().replace('.000Z', 'Z');
-  assert.equal(freshComposeSource(releaseListReadAt, now), true);
-  assert.equal(freshComposeSource(lastVerified, now), false);
+  const releaseListReadAt = '2026-11-23T20:35:12Z';
+  assert.notEqual(lastVerified, releaseListReadAt);
+  assert.equal(verifiedTrackerLastVerifiedAtUtc({...artifacts,
+    releaseListReadAtUtc: releaseListReadAt}, TRACKER), SOURCE_AT);
 });
 
 test('tracker source requires the selected pointer and pinned signed-out proof', () => {

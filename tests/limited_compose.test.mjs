@@ -4,11 +4,7 @@ import {existsSync, readFileSync, readdirSync} from 'node:fs';
 import {spawnSync} from 'node:child_process';
 import {createHash, webcrypto} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
-import {PICOS_PARTS} from '../actions/picos_parts.mjs';
 import {validateCustomerTrackerUrl as validateIntentCustomerTrackerUrl} from '../actions/contract.mjs';
-import {buildProviderCompose, buildCustomerCompose, buildOutlookComposeUrl,
-  validateProviderHandoff, validateCustomerHandoff,
-  freshComposeSource, MAX_COMPOSE_SOURCE_AGE_MS} from '../actions/local_compose.mjs';
 import {encryptPilotBinding, decryptPilotBinding, createPilotBindingDecoder,
   PILOT_BINDING_SCHEMA,
   validateCustomerTrackerUrl, validatePilotBindingPayload} from '../actions/pilot_binding.mjs';
@@ -34,7 +30,6 @@ const CHART_KEY = Uint8Array.from({length: 32}, (_, index) => index);
 const PROVIDER_DIGEST = await digestSelection({kind: 'provider', id: WO_ID}, CHART_KEY);
 const CUSTOMER_DIGEST = await digestSelection({kind: 'customer', id: FORM_KEY}, CHART_KEY);
 const SOURCE_AT = '2026-11-22T18:43:09Z';
-const SOURCE_NOW = Date.parse('2026-11-22T19:00:00Z');
 const TRACKER = `https://rbcochell-ui.github.io/arbys-customer-status-preview/?p=p_${'a'.repeat(32)}#k=${'A'.repeat(43)}`;
 const TRACKER_B = `https://rbcochell-ui.github.io/arbys-customer-status-preview/?p=p_${'b'.repeat(32)}#k=${'E'.repeat(43)}`;
 const DIRECT_IDENTITY = Object.freeze({storeNumber: '90123', outletAcn: '000123456',
@@ -266,46 +261,6 @@ test('iframe can select only an exact allowlisted ID from its own opaque origin'
   assert.equal(selections.length, 2);
 });
 
-test('provider compose suggests both encrypted-chart contacts and includes all six exact myCoke URLs', () => {
-  const source = {eligible: true, type: 'Installation', nativeWoId: WO_ID,
-    displayWoNumber: '1234567', agentCode: 'T01', sourceObservedAtUtc: SOURCE_AT,
-    suggestedRecipients: ['install@example.test', 'planner@example.test']};
-  assert.deepEqual(validateProviderHandoff(source, SOURCE_NOW), {kind: 'provider', id: WO_ID});
-  const compose = buildProviderCompose(source, SOURCE_NOW);
-  const url = new URL(compose.url);
-  assert.equal(url.origin, 'https://outlook.office.com');
-  assert.equal(url.pathname, '/mail/deeplink/compose');
-  assert.deepEqual([...url.searchParams.keys()].sort(), ['body', 'subject', 'to']);
-  assert.deepEqual(compose.to, ['install@example.test', 'planner@example.test']);
-  assert.equal(url.searchParams.get('to'), 'install@example.test,planner@example.test');
-  assert.equal(compose.body.includes('<a '), false);
-  for (const part of PICOS_PARTS) {
-    assert.ok(compose.body.includes(`${part.url} `));
-    assert.ok(compose.body.includes(`myCoke material ${part.material}`));
-  }
-  assert.ok(compose.body.includes('Verify the current service date in Thirsty.'));
-  assert.equal(url.searchParams.get('body'), compose.body);
-  assert.throws(() => buildProviderCompose({eligible: true, type: 'Survey', nativeWoId: WO_ID,
-    displayWoNumber: '1234567', agentCode: 'T01', sourceObservedAtUtc: SOURCE_AT}, SOURCE_NOW));
-  const blank = buildProviderCompose({eligible: true, type: 'Installation', nativeWoId: WO_ID,
-    displayWoNumber: '1234567', agentCode: 'T01', sourceObservedAtUtc: SOURCE_AT,
-    suggestedRecipients: []}, SOURCE_NOW);
-  assert.deepEqual(blank.to, []);
-  assert.equal(new URL(blank.url).searchParams.has('to'), false);
-  assert.throws(() => buildProviderCompose({eligible: true, type: 'Installation', nativeWoId: WO_ID,
-    displayWoNumber: '1234567', agentCode: 'T01', sourceObservedAtUtc: SOURCE_AT,
-    suggestedRecipients: ['only@example.test']}, SOURCE_NOW));
-});
-
-test('Outlook query encoding does not turn data into new parameters', () => {
-  const url = new URL(buildOutlookComposeUrl({to: [], subject: 'A & B', body: 'First & second\r\nhttps://example.test/a?x=1&y=2 '}));
-  assert.deepEqual([...url.searchParams.keys()].sort(), ['body', 'subject']);
-  assert.equal(url.searchParams.get('subject'), 'A & B');
-  assert.equal(url.searchParams.get('body'), 'First & second\r\nhttps://example.test/a?x=1&y=2 ');
-  assert.throws(() => buildOutlookComposeUrl({to: ['a@example.test\r\nBcc:evil@example.test'],
-    subject: 'Valid', body: 'Valid'}));
-});
-
 test('customer binding needs the publisher signature as well as Gantt key and FORM AAD', async () => {
   const key = new Uint8Array(32).fill(7);
   const payload = {schema: PILOT_BINDING_SCHEMA, formSourceKey: FORM_KEY,
@@ -411,10 +366,6 @@ test('local protected bundle resolves two work orders and two projects by exact 
     {kind: 'customer', id: FORM_KEY}), customerOne);
   assert.deepEqual(await decodeWithTestKey(bundle, key, sources,
     {kind: 'customer', id: FORM_KEY_B}), customerTwo);
-  const staleAt = Date.parse(SOURCE_AT) + MAX_COMPOSE_SOURCE_AGE_MS;
-  assert.throws(() => buildCustomerCompose(sources.customerByKey[FORM_KEY],
-    customerOne, staleAt), /Current customer release source is required/);
-  assert.equal(freshComposeSource(providerOne.verifiedAtUtc, staleAt), false);
   // The browser's real parser/verifier never accepts a test key from a file.
   const pretendsToUseProductionKey = [
     {kind: 'provider', id: WO_ID,
@@ -481,49 +432,26 @@ test('local protected bundle resolves two work orders and two projects by exact 
   {kind: 'provider', id: WO_ID_B}), null);
 });
 
-test('customer compose needs the matching protected pilot link and prefilled recipient', () => {
+test('customer tracker validators require the complete private project link', () => {
   assert.equal(validateIntentCustomerTrackerUrl(TRACKER), TRACKER);
-  assert.throws(() => validateIntentCustomerTrackerUrl(
-    TRACKER.replace('status-preview/?', 'status-preview/track.html?')));
-  const binding = {formSourceKey: FORM_KEY, storeNumber: '90123',
-    recipientEmail: 'customer@example.test', trackerUrl: TRACKER,
-    trackerLastVerifiedAtUtc: SOURCE_AT};
-  const project = {eligible: true, formSourceKey: FORM_KEY, storeNumber: '90123'};
-  assert.deepEqual(validateCustomerHandoff(project, binding, SOURCE_NOW),
-    {kind: 'customer', id: FORM_KEY});
-  const compose = buildCustomerCompose(project, binding, SOURCE_NOW);
-  const url = new URL(compose.url);
-  assert.equal(url.searchParams.get('to'), 'customer@example.test');
-  assert.ok(url.searchParams.get('body').includes(TRACKER));
-  assert.deepEqual([...url.searchParams.keys()].sort(), ['body', 'subject', 'to']);
-  assert.throws(() => buildCustomerCompose({eligible: true, formSourceKey: 'F:123:457',
-    storeNumber: '90123'}, binding, SOURCE_NOW));
-  assert.throws(() => validateCustomerTrackerUrl('https://example.test/track.html?p=x#k=y'));
-  assert.throws(() => validateCustomerTrackerUrl(TRACKER.replace('#k=', '&k=')));
+  assert.equal(validateCustomerTrackerUrl(TRACKER), TRACKER);
+  for (const invalid of [
+    'https://rbcochell-ui.github.io/arbys-customer-status-preview/',
+    TRACKER.replace('status-preview/?', 'status-preview/track.html?'),
+    TRACKER.replace('#k=', '&k='),
+    'https://example.test/track.html?p=x#k=y',
+  ]) {
+    assert.throws(() => validateIntentCustomerTrackerUrl(invalid));
+    assert.throws(() => validateCustomerTrackerUrl(invalid));
+  }
 });
 
-test('an Outlook compose requires a current, unambiguous source timestamp at click time', () => {
-  const observedMs = Date.parse(SOURCE_AT);
-  assert.equal(freshComposeSource(SOURCE_AT, observedMs + MAX_COMPOSE_SOURCE_AGE_MS - 1), true);
-  assert.equal(freshComposeSource(SOURCE_AT, observedMs + MAX_COMPOSE_SOURCE_AGE_MS), false);
-  assert.equal(freshComposeSource(SOURCE_AT, observedMs - 120_000), false);
-  assert.equal(freshComposeSource('2026-11-22T18:43:09-05:00', SOURCE_NOW), false);
-  const staleNow = observedMs + MAX_COMPOSE_SOURCE_AGE_MS + 1;
-  assert.throws(() => buildProviderCompose({eligible: true, type: 'Installation',
-    nativeWoId: WO_ID, displayWoNumber: '1234567', agentCode: 'T01',
-    suggestedRecipients: [], sourceObservedAtUtc: SOURCE_AT}, staleNow));
-  assert.throws(() => buildCustomerCompose({eligible: true, formSourceKey: FORM_KEY,
-    storeNumber: '90123'}, {formSourceKey: FORM_KEY, storeNumber: '90123',
-    recipientEmail: 'customer@example.test', trackerUrl: TRACKER,
-    trackerLastVerifiedAtUtc: SOURCE_AT}, staleNow));
+test('pilot binding requires the tracker’s verified source time, not a read clock', () => {
   const oldReadClock = {schema: PILOT_BINDING_SCHEMA, formSourceKey: FORM_KEY,
     storeNumber: '90123', recipientEmail: 'customer@example.test', trackerUrl: TRACKER,
     releaseReceiptSha256: 'a'.repeat(64), sourceReadAtUtc: SOURCE_AT};
   assert.throws(() => validatePilotBindingPayload(oldReadClock, FORM_KEY),
     /Invalid pilot binding/);
-  assert.throws(() => buildCustomerCompose({eligible: true, formSourceKey: FORM_KEY,
-    storeNumber: '90123'}, oldReadClock, observedMs + 60_000),
-    /Current customer release source is required/);
 });
 
 test('pilot bindings are held outside the public repository', () => {
@@ -567,9 +495,6 @@ test('local helper handoff carries only one canonical selected ID', () => {
 
 test('provider remains held until an exact release; customer ID handoff is bounded', () => {
   const allowed = {providerIds: [WO_ID], customerKeys: [FORM_KEY]};
-  const stale = parseComposeSources(syntheticHtml(), allowed).providerById[WO_ID];
-  assert.equal(freshComposeSource(stale.sourceObservedAtUtc,
-    Date.parse(stale.sourceObservedAtUtc) + MAX_COMPOSE_SOURCE_AGE_MS), false);
   const noDirectSource = parseComposeSources(syntheticHtml({
     overlayIdentity: {...DIRECT_IDENTITY, outletAcn: '009999999'},
   }), allowed);
@@ -648,6 +573,7 @@ test('local binding builders refuse public-repository output paths', () => {
 });
 
 test('viewer holds buttons and leaves recipient and link verification for Outlook', () => {
+  assert.equal(existsSync(new URL('../actions/local_compose.mjs', import.meta.url)), false);
   const page = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
   assert.match(page, /Before sending in Outlook, verify the recipient, current Thirsty or FORM date and scope, and every link/);
   assert.match(page, /Acting coordinator: not verified on this page/);
