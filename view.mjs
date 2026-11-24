@@ -166,7 +166,7 @@ function showSelection(selected) {
     const dated = sources?.providerDisplayById?.[selected.id] ?? null;
     selectedIdentity.textContent = `Native work order ID: ${selected.id}`;
     selectionText.textContent = source
-      ? `Installation WO ${source.displayWoNumber} selected for a parts review.`
+      ? `Dated Installation WO ${source.displayWoNumber} selected for a parts review.`
       : dated
         ? `Charted Installation WO ${dated.displayWoNumber} selected; verify current details in Thirsty before drafting.`
         : 'Work order selected. Current installation details require a fresh Thirsty check.';
@@ -177,7 +177,7 @@ function showSelection(selected) {
         : 'Store and agent: check the current Thirsty record.';
     selectedRecipients.textContent = 'Install manager and planner: resolved by the helper; verify both in Outlook.';
     sourceStamp.textContent = source
-      ? `Dated chart source: ${source.sourceObservedAtUtc}; status: ${source.status}; SP date: ${source.spActivityDate ?? 'not recorded'}`
+      ? `Thirsty overlay observed ${source.sourceObservedAtUtc}; status: ${source.status}; SP date: ${source.spActivityDate ?? 'not recorded'}. The helper rechecks the current work order.`
       : dated
         ? `Chart snapshot ${dated.snapshotAsOfDate}. The helper requires direct Thirsty verification of store, ACN, provider assignment, and visit status.`
         : 'Current WO source is unavailable in this chart. The helper requires a fresh Thirsty check before drafting.';
@@ -190,7 +190,9 @@ function showSelection(selected) {
       ? `Chart store: ${source.storeNumber}`
       : 'Store: check the current FORM project.';
     selectedRecipients.textContent = 'FORM Primary Contact: suggested by the helper; verify before sending.';
-    sourceStamp.textContent = 'The helper checks the unique private tracker URL and its last verified source time.';
+    sourceStamp.textContent = sources?.snapshotAsOfDate
+      ? `Chart snapshot as of ${sources.snapshotAsOfDate}. The helper checks the current FORM contact and the private tracker’s last verified time.`
+      : 'Chart source time unavailable here. The helper checks the current FORM contact and private tracker before drafting.';
   }
   updateActionStates(selected, source);
   void digestSelection(selected, selectionMacKeyBytes).then(digest => {

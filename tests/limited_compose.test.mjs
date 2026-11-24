@@ -147,6 +147,30 @@ test('dated WO selection stays legible when the later visit overlay lacks routin
     allowed).providerDisplayById[WO_ID], undefined);
 });
 
+test('missing or malformed provider overlay holds routing while keeping FORM context', () => {
+  const allowed = {providerIds: [WO_ID], customerKeys: [FORM_KEY]};
+  const original = syntheticHtml();
+  const withoutOverlay = original.replace(
+    /<script type="application\/json" id="providerVisitSourceOverlay">[^<]+<\/script>/u, '');
+  const wrongSchema = original.replace('ArbysProviderVisitSourceOverlay/v2',
+    'ArbysProviderVisitSourceOverlay/unknown');
+  const malformedObserved = original.replace(`"observedAtUtc":"${SOURCE_AT}"`,
+    '"observedAtUtc":{"toString":"broken"}');
+  const duplicated = original + original.match(
+    /<script type="application\/json" id="providerVisitSourceOverlay">[^<]+<\/script>/u)[0];
+  for (const html of [withoutOverlay, wrongSchema, malformedObserved, duplicated]) {
+    const selected = parseComposeSources(html, allowed);
+    assert.equal(selected.providerById[WO_ID], undefined);
+    assert.equal(selected.providerDisplayById[WO_ID].displayWoNumber, '1234567');
+    assert.equal(selected.customerByKey[FORM_KEY].storeNumber, '90123');
+    assert.equal(selected.snapshotAsOfDate, '2026-11-18');
+    assert.equal(selected.overlayObservedAtUtc, null);
+  }
+  assert.throws(() => parseComposeSources(withoutOverlay.replace(
+    'arbys-local-exact-form-project-preview/v16', 'unknown'), allowed),
+  /Chart action data unavailable/u);
+});
+
 test('a malformed Assigned SP field holds only that work order action, not the chart', () => {
   const allowed = {providerIds: [WO_ID], customerKeys: [FORM_KEY]};
   for (const malformed of [null, 17, {name: 'T01'}, ['T01']]) {

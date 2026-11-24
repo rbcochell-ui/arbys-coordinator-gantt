@@ -21,8 +21,12 @@ const provider = `0WO${'A'.repeat(15)}`;
 const actionRoutes = {schema: 'ArbysGanttSelection/v1', actionsEnabled: false,
   providerAllowedNativeWorkOrderIds: [provider],
   customerAllowedFormSourceKeys: [pilot]};
+const snapshot = {schema: 'arbys-local-exact-form-project-preview/v16',
+  asOfDate: '2026-11-18', projects: [{caseKey: pilot, formStore: '12345',
+    cases: []}]};
 const chartHtml = '<!doctype html><html lang="en"><head>' +
   `<script type="application/json" id="actionRoutes">${JSON.stringify(actionRoutes)}</script>` +
+  `<script type="application/json" id="snapshotData">${JSON.stringify(snapshot)}</script>` +
   '</head><body><h1>Invented sample timeline</h1></body></html>';
 const key = randomBytes(32);
 const nonce = randomBytes(12);
@@ -81,6 +85,8 @@ try {
   assert.match(withKey, /Invented sample timeline/);
   assert.match(withKey, /Customer milestone draft — held/);
   assert.match(withKey, /Check Sent — held/);
+  assert.match(withKey, /Store 12345 selected for a customer progress note/);
+  assert.match(withKey, /Chart snapshot as of 2026-11-18/);
   assert.match(withKey, /Acting coordinator: not verified on this page/);
   assert.match(withKey, /Drafting is held in this release/);
   assert.match(withKey, /Check Sent can identify a candidate/);

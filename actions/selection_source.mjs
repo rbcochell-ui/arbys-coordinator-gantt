@@ -22,12 +22,19 @@ export function parseComposeSources(html, allowed) {
     throw new Error('Chart action data unavailable');
   }
   const snapshot = readJsonScript(html, 'snapshotData', 700_000);
-  const overlay = readJsonScript(html, 'providerVisitSourceOverlay', 200_000);
+  // A missing or malformed provider-only overlay cannot turn a dated chart
+  // record into a compose source. Keep the FORM selection visible while the
+  // provider action remains held for a fresh direct Thirsty check.
+  let overlay = null;
+  try { overlay = readJsonScript(html, 'providerVisitSourceOverlay', 200_000); }
+  catch { /* Provider source remains unavailable. */ }
+  if (overlay?.schema !== 'ArbysProviderVisitSourceOverlay/v2' ||
+      !overlay.rows || typeof overlay.rows !== 'object' ||
+      Array.isArray(overlay.rows) ||
+      typeof overlay.observedAtUtc !== 'string' ||
+      !Number.isFinite(Date.parse(overlay.observedAtUtc))) overlay = null;
   if (snapshot?.schema !== 'arbys-local-exact-form-project-preview/v16' ||
-      !Array.isArray(snapshot.projects) || snapshot.projects.length > 50 ||
-      overlay?.schema !== 'ArbysProviderVisitSourceOverlay/v2' ||
-      !overlay.rows || typeof overlay.rows !== 'object' || Array.isArray(overlay.rows) ||
-      !Number.isFinite(Date.parse(overlay.observedAtUtc))) {
+      !Array.isArray(snapshot.projects) || snapshot.projects.length > 50) {
     throw new Error('Chart action data unavailable');
   }
   const providerIds = new Set(allowed.providerIds);
@@ -54,7 +61,7 @@ export function parseComposeSources(html, allowed) {
         if (!providerIds.has(wo?.id)) continue;
         if (seenProvider.has(wo.id)) throw new Error('Duplicate work order');
         seenProvider.add(wo.id);
-        const row = overlay.rows[wo.id];
+        const row = overlay?.rows[wo.id];
         const hold = value => value === '0' || value === 0 || value === false;
         const assignedSpName = wo.nativeFields?.['Assigned SP - Name'];
         const nativeAgentCode = typeof assignedSpName === 'string'
@@ -116,5 +123,6 @@ export function parseComposeSources(html, allowed) {
   return Object.freeze({providerById: Object.freeze(providerById),
     providerDisplayById: Object.freeze(providerDisplayById),
     customerByKey: Object.freeze(customerByKey),
-    snapshotAsOfDate: snapshot.asOfDate, overlayObservedAtUtc: overlay.observedAtUtc});
+    snapshotAsOfDate: snapshot.asOfDate,
+    overlayObservedAtUtc: overlay?.observedAtUtc ?? null});
 }
