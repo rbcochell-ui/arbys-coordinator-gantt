@@ -9,7 +9,8 @@ const CHANNEL = 'arbys.gantt.selection.v1';
  * in the Pages parent invokes runSelectedFromParentClick(event) explicitly.
  */
 export function createFrameSelectionBridge({hostWindow, frame, actions,
-    allowedProviderIds, allowedCustomerKeys, onSelection = () => {}}) {
+    allowedProviderIds, allowedCustomerKeys, initialSelection = null,
+    onSelection = () => {}}) {
   if (!hostWindow?.addEventListener || !hostWindow?.removeEventListener ||
       !frame?.contentWindow || !actions?.createOrOpenProviderDraft ||
       !actions?.createOrOpenCustomerDraft || typeof onSelection !== 'function') {
@@ -17,7 +18,18 @@ export function createFrameSelectionBridge({hostWindow, frame, actions,
   }
   const providers = new Set(allowedProviderIds ?? []);
   const customers = new Set(allowedCustomerKeys ?? []);
-  let selection = null;
+  const initialExact = initialSelection &&
+    typeof initialSelection === 'object' &&
+    !Array.isArray(initialSelection) &&
+    Object.keys(initialSelection).sort().join(',') === 'id,kind' &&
+    typeof initialSelection.id === 'string';
+  const initial = initialExact && initialSelection.kind === 'provider' &&
+      providers.has(initialSelection.id)
+    ? {kind: 'provider', id: initialSelection.id}
+    : initialExact && initialSelection.kind === 'customer' &&
+      customers.has(initialSelection.id)
+      ? {kind: 'customer', id: initialSelection.id} : null;
+  let selection = initial;
   let busy = false;
 
   function onMessage(event) {

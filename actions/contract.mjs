@@ -106,7 +106,7 @@ export function validateCustomerTrackerUrl(value) {
   const query = [...url.searchParams.entries()];
   const fragment = [...new URLSearchParams(url.hash.slice(1)).entries()];
   if (url.origin !== 'https://rbcochell-ui.github.io' ||
-      url.pathname !== '/arbys-customer-status-preview/track.html' ||
+      url.pathname !== '/arbys-customer-status-preview/' ||
       query.length !== 1 || query[0][0] !== 'p' || !/^p_[0-9a-f]{32}$/.test(query[0][1]) ||
       fragment.length !== 1 || fragment[0][0] !== 'k' || !/^[A-Za-z0-9_-]{43}$/.test(fragment[0][1]) ||
       url.username || url.password) {
